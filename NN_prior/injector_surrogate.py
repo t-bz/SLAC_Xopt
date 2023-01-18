@@ -5,25 +5,7 @@ from botorch.models.transforms.input import Normalize
 from torch.nn import Module
 
 
-def create_nn_transformers(fname):
-    """return normalize transformers from fname"""
-    data = json.load(open(fname))
 
-    transformers = []
-    for ele in ["x", "y"]:
-        transform = Normalize(len(data[f"{ele}_min"]))
-        transform.ranges = 1 / torch.tensor(
-            data[f"{ele}_scale"], dtype=torch.double
-        ).unsqueeze(0)
-        transform.mins = (
-            -torch.tensor(data[f"{ele}_min"], dtype=torch.double).unsqueeze(0)
-            * transform.ranges
-        )
-
-        transform.eval()
-        transformers.append(transform)
-
-    return transformers
 
 
 class Surrogate(Module):
