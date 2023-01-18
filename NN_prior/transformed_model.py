@@ -89,3 +89,12 @@ class TransformedModel(torch.nn.Module):
         self.set_transformers(eval_mode=False)
 
         return y
+
+
+class KeyedTransformedModel(TransformedModel):
+    def __init__(self, model, input_transformer, outcome_transformer, input_keys,
+                 outcome_keys):
+        super().__init__(model, input_transformer, outcome_transformer)
+        self.input_keys = input_keys
+        self.outcome_keys = outcome_keys
+
