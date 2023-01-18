@@ -1,7 +1,7 @@
 import json
 
 import torch
-from pyro.distributions.transforms import Normalize
+from botorch.models.transforms.input import AffineInputTransform
 
 
 def create_sim_to_nn_transformers(transformers_fname):
@@ -12,13 +12,12 @@ def create_sim_to_nn_transformers(transformers_fname):
 
     transformers = []
     for ele in ["x", "y"]:
-        transform = Normalize(len(data[f"{ele}_min"]))
-        transform.ranges = 1 / torch.tensor(
-            data[f"{ele}_scale"], dtype=torch.double
-        ).unsqueeze(0)
-        transform.mins = (
-                -torch.tensor(data[f"{ele}_min"], dtype=torch.double).unsqueeze(0)
-                * transform.ranges
+        scale = torch.tensor(data[f"{ele}_scale"], dtype=torch.double)
+        min_val = torch.tensor(data[f"{ele}_min"], dtype=torch.double)
+        transform = AffineInputTransform(
+            len(data[f"{ele}_min"]),
+            1 / scale,
+            -min_val / scale,
         )
 
         transformers.append(transform)

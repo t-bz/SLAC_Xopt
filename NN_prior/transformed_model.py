@@ -84,7 +84,7 @@ class TransformedModel(torch.nn.Module):
         y_model = self.model(x_model)
 
         # transform outputs
-        y = self.outcome_transformer(y_model)
+        y = self.outcome_transformer.untransform(y_model)
 
         self.set_transformers(eval_mode=False)
 
