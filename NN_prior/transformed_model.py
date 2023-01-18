@@ -49,6 +49,10 @@ class TransformedModel(torch.nn.Module):
     """
 
     def __init__(self, model, input_transformer, outcome_transformer):
+        """
+        model: torch.nn.Module object
+        input_transformer:
+        """
         super().__init__()
         self.model = model
         self.model.eval()
@@ -56,10 +60,22 @@ class TransformedModel(torch.nn.Module):
         self.input_transformer = input_transformer
         self.outcome_transformer = outcome_transformer
 
+    def set_transformers(self, eval_mode=True):
+        """ set transformers to eval mode if they are torch.nn.Module objects -
+        prevents transformer training during evaluation
+        if `eval_mode` is true set to eval, otherwise set to train
+        """
+        modules = [self.input_transformer, self.outcome_transformer]
+        for m in modules:
+            if isinstance(m, torch.nn.Module):
+                if eval_mode:
+                    m.eval()
+                else:
+                    m.train()
+
     def forward(self, x):
         # set transformers to eval mode
-        self.input_transformer.eval()
-        self.outcome_transformer.eval()
+        self.set_transformers(eval_mode=True)
 
         # transform inputs to model space
         x_model = self.input_transformer(x)
@@ -70,7 +86,6 @@ class TransformedModel(torch.nn.Module):
         # transform outputs
         y = self.outcome_transformer(y_model)
 
-        self.input_transformer.eval()
-        self.outcome_transformer.eval()
+        self.set_transformers(eval_mode=False)
 
         return y
