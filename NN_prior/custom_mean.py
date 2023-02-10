@@ -19,6 +19,10 @@ class CustomMean(TransformedModel, Mean):
 
         super(CustomMean, self).__init__(model, gp_input_transform, gp_outcome_transform)
 
+    def evaluate_model(self, x):
+        """Placeholder method which can be used to modify model calls."""
+        return self.model(x)
+
     def forward(self, x):
         # set transformers to eval mode
         self.input_transformer.eval()
@@ -28,7 +32,7 @@ class CustomMean(TransformedModel, Mean):
         x_model = self.input_transformer.untransform(x)
 
         # evaluate model
-        y_model = self.model(x_model)
+        y_model = self.evaluate_model(x_model)
 
         # transform outputs
         y = self.outcome_transformer(y_model)[0]
