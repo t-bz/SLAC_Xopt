@@ -40,7 +40,7 @@ class CustomMean(TransformedModel, Mean):
         return y
 
 
-class LinearInputNodes(CustomMean):
+class LinearInputCalibration(CustomMean):
     def __init__(
             self,
             model: torch.nn.Module,
@@ -48,9 +48,9 @@ class LinearInputNodes(CustomMean):
             gp_outcome_transform: torch.nn.Module,
             **kwargs,
     ):
-        """Prior mean with learnable linear input transformation.
+        """Prior mean with learnable linear input calibration.
 
-        Inputs are passed through decoupled linear transformation nodes
+        Inputs are passed through decoupled linear calibration nodes
         with learnable shift and scaling parameters:
         y = model(x_scale * (x + x_shift)).
 
@@ -87,14 +87,14 @@ class LinearInputNodes(CustomMean):
         )
         self.register_prior("x_shift_prior", x_scale_prior, "x_shift")
 
-    def input_nodes(self, x):
+    def input_calibration(self, x):
         return self.x_scale * (x + self.x_shift)
 
     def evaluate_model(self, x):
-        return self.model(self.input_nodes(x))
+        return self.model(self.input_calibration(x))
 
 
-class LinearOutputNodes(CustomMean):
+class LinearOutputCalibration(CustomMean):
     def __init__(
             self,
             model: torch.nn.Module,
@@ -102,9 +102,9 @@ class LinearOutputNodes(CustomMean):
             gp_outcome_transform: torch.nn.Module,
             **kwargs,
     ):
-        """Prior mean with learnable linear output transformation.
+        """Prior mean with learnable linear output calibration.
 
-        Outputs are passed through decoupled linear transformation nodes
+        Outputs are passed through decoupled linear calibration nodes
         with learnable shift and scaling parameters:
         y = y_scale * (model(x) + y_shift).
 
@@ -141,14 +141,14 @@ class LinearOutputNodes(CustomMean):
         )
         self.register_prior("y_shift_prior", y_scale_prior, "y_shift")
 
-    def output_nodes(self, y):
+    def output_calibration(self, y):
         return self.y_scale * (y + self.y_shift)
 
     def evaluate_model(self, x):
-        return self.output_nodes(self.model(x))
+        return self.output_calibration(self.model(x))
 
 
-class LinearNodes(LinearInputNodes, LinearOutputNodes):
+class LinearCalibration(LinearInputCalibration, LinearOutputCalibration):
     def __init__(
             self,
             model: torch.nn.Module,
@@ -156,9 +156,9 @@ class LinearNodes(LinearInputNodes, LinearOutputNodes):
             gp_outcome_transform: torch.nn.Module,
             **kwargs,
     ):
-        """Prior mean with learnable linear input and output transformations.
+        """Prior mean with learnable linear input and output calibrations.
 
-        Inputs and outputs are passed through decoupled linear transformation
+        Inputs and outputs are passed through decoupled linear calibration
         nodes with learnable shift and scaling parameters:
         y = y_scale * model(x_scale * (x + x_shift)) + y_shift.
 
@@ -171,4 +171,4 @@ class LinearNodes(LinearInputNodes, LinearOutputNodes):
                          **kwargs)
 
     def evaluate_model(self, x):
-        return self.output_nodes(self.model(self.input_nodes(x)))
+        return self.output_calibration(self.model(self.input_calibration(x)))
