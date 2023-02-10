@@ -146,3 +146,29 @@ class LinearOutputNodes(CustomMean):
 
     def evaluate_model(self, x):
         return self.output_nodes(self.model(x))
+
+
+class LinearNodes(LinearInputNodes, LinearOutputNodes):
+    def __init__(
+            self,
+            model: torch.nn.Module,
+            gp_input_transform: torch.nn.Module,
+            gp_outcome_transform: torch.nn.Module,
+            **kwargs,
+    ):
+        """Prior mean with learnable linear input and output transformations.
+
+        Inputs and outputs are passed through decoupled linear transformation
+        nodes with learnable shift and scaling parameters:
+        y = y_scale * model(x_scale * (x + x_shift)) + y_shift.
+
+        Args:
+            model: Inherited from CustomMean.
+            gp_input_transform: Inherited from CustomMean.
+            gp_outcome_transform: Inherited from CustomMean.
+        """
+        super().__init__(model, gp_input_transform, gp_outcome_transform,
+                         **kwargs)
+
+    def evaluate_model(self, x):
+        return self.output_nodes(self.model(self.input_nodes(x)))
