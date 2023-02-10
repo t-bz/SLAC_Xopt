@@ -88,7 +88,7 @@ class LinearInputNodes(CustomMean):
         self.register_prior("x_shift_prior", x_scale_prior, "x_shift")
 
     def input_nodes(self, x):
-        return self.x_scale * x + self.x_shift
+        return self.x_scale * (x + self.x_shift)
 
     def evaluate_model(self, x):
         return self.model(self.input_nodes(x))
@@ -106,7 +106,7 @@ class LinearOutputNodes(CustomMean):
 
         Outputs are passed through decoupled linear transformation nodes
         with learnable shift and scaling parameters:
-        y = y_scale * model(x) + y_shift.
+        y = y_scale * (model(x) + y_shift).
 
         Args:
             model: Inherited from CustomMean.
@@ -142,7 +142,7 @@ class LinearOutputNodes(CustomMean):
         self.register_prior("y_shift_prior", y_scale_prior, "y_shift")
 
     def output_nodes(self, y):
-        return self.y_scale * y + self.y_shift
+        return self.y_scale * (y + self.y_shift)
 
     def evaluate_model(self, x):
         return self.output_nodes(self.model(x))
