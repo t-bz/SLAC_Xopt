@@ -1,6 +1,7 @@
 import torch
 from gpytorch.means.mean import Mean
-from gpytorch.priors import NormalPrior
+from gpytorch.priors import NormalPrior, GammaPrior
+from gpytorch.constraints import Positive
 from transformed_model import TransformedModel
 
 
@@ -63,8 +64,10 @@ class LinearInputCalibration(CustomMean):
             x_dim (int): The input dimension. Defaults to 1.
             x_shift_prior (gpytorch.priors.Prior): Prior over x_shift.
               Defaults to a Normal distribution.
+            x_scale_constraint (torch.nn.Module): Parameter constraint for
+              x_scale. Defaults to positive.
             x_scale_prior (gpytorch.priors.Prior): Prior over x_scale.
-              Defaults to a Normal distribution centered at 1.
+              Defaults to a Gamma distribution (concentration=2.0, rate=2.0).
 
         Attributes:
             x_shift (torch.nn.Parameter): Parameter tensor of size x_dim.
@@ -79,13 +82,31 @@ class LinearInputCalibration(CustomMean):
                         scale=torch.ones((1, self.x_dim)))
         )
         self.register_prior("x_shift_prior", x_shift_prior, "x_shift")
-        self.x_scale = torch.nn.Parameter(torch.randn(self.x_dim))
+        self.raw_x_scale = torch.nn.Parameter(torch.randn(self.x_dim))
+        x_scale_constraint = kwargs.get("x_scale_constraint",
+                                        Positive())
+        self.register_constraint("raw_x_scale", x_scale_constraint)
         x_scale_prior = kwargs.get(
             "x_scale_prior",
-            NormalPrior(loc=torch.ones((1, self.x_dim)),
-                        scale=torch.ones((1, self.x_dim)))
+            GammaPrior(concentration=2.0 * torch.ones((1, self.x_dim)),
+                       rate=2.0 * torch.ones((1, self.x_dim)))
         )
-        self.register_prior("x_shift_prior", x_scale_prior, "x_shift")
+        self.register_prior("x_scale_prior", x_scale_prior, "x_scale")
+
+    @property
+    def x_scale(self):
+        x_scale = self.raw_x_scale_constraint.transform(self.raw_x_scale)
+        return x_scale
+
+    @x_scale.setter
+    def x_scale(self, value):
+        return self._set_x_scale(value)
+
+    def _set_x_scale(self, value):
+        if not torch.is_tensor(value):
+            value = torch.as_tensor(value).to(self.raw_x_scale)
+        self.initialize(
+            raw_x_scale=self.raw_x_scale_constraint.inverse_transform(value))
 
     def input_calibration(self, x):
         return self.x_scale * (x + self.x_shift)
@@ -117,8 +138,10 @@ class LinearOutputCalibration(CustomMean):
             y_dim (int): The output dimension. Defaults to 1.
             y_shift_prior (gpytorch.priors.Prior): Prior over y_shift.
               Defaults to a Normal distribution.
+            y_scale_constraint (torch.nn.Module): Parameter constraint for
+              y_scale. Defaults to positive.
             y_scale_prior (gpytorch.priors.Prior): Prior over y_scale.
-              Defaults to a Normal distribution centered at 1.
+              Defaults to a Gamma distribution (concentration=2.0, rate=2.0).
 
         Attributes:
             y_shift (torch.nn.Parameter): Parameter tensor of size y_dim.
@@ -133,13 +156,31 @@ class LinearOutputCalibration(CustomMean):
                         scale=torch.ones((1, self.y_dim)))
         )
         self.register_prior("y_shift_prior", y_shift_prior, "y_shift")
-        self.y_scale = torch.nn.Parameter(torch.randn(self.y_dim))
+        self.raw_y_scale = torch.nn.Parameter(torch.randn(self.y_dim))
+        y_scale_constraint = kwargs.get("y_scale_constraint",
+                                        Positive())
+        self.register_constraint("raw_y_scale", y_scale_constraint)
         y_scale_prior = kwargs.get(
             "y_scale_prior",
-            NormalPrior(loc=torch.ones((1, self.y_dim)),
-                        scale=torch.ones((1, self.y_dim)))
+            GammaPrior(concentration=2.0 * torch.ones((1, self.y_dim)),
+                       rate=2.0 * torch.ones((1, self.y_dim)))
         )
-        self.register_prior("y_shift_prior", y_scale_prior, "y_shift")
+        self.register_prior("y_scale_prior", y_scale_prior, "y_scale")
+
+    @property
+    def y_scale(self):
+        y_scale = self.raw_y_scale_constraint.transform(self.raw_y_scale)
+        return y_scale
+
+    @y_scale.setter
+    def y_scale(self, value):
+        return self._set_y_scale(value)
+
+    def _set_y_scale(self, value):
+        if not torch.is_tensor(value):
+            value = torch.as_tensor(value).to(self.raw_y_scale)
+        self.initialize(
+            raw_y_scale=self.raw_y_scale_constraint.inverse_transform(value))
 
     def output_calibration(self, y):
         return self.y_scale * (y + self.y_shift)
