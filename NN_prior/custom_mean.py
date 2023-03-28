@@ -282,3 +282,72 @@ class OutputOffsetCalibration(CustomMean):
 
     def evaluate_model(self, x):
         return self.output_calibration(self.model(x))
+
+
+class OutputScaleCalibration(CustomMean):
+    def __init__(
+            self,
+            model: torch.nn.Module,
+            gp_input_transform: torch.nn.Module,
+            gp_outcome_transform: torch.nn.Module,
+            **kwargs,
+    ):
+        """Prior mean with learnable output scale calibration.
+
+        Outputs are augmented by a learnable scaling parameter:
+        y = y_scale * model(x).
+
+        Args:
+            model: Inherited from CustomMean.
+            gp_input_transform: Inherited from CustomMean.
+            gp_outcome_transform: Inherited from CustomMean.
+
+        Keyword Args:
+            y_dim (int): The output dimension. Defaults to 1.
+            y_scale_prior (gpytorch.priors.Prior): Prior over y_scale.
+              Defaults to None.
+            y_scale_constraint (torch.nn.Module): Parameter constraint for
+              y_scale. Defaults to None.
+
+        Attributes:
+            y_scale (torch.nn.Parameter): Parameter tensor of size y_dim.
+        """
+        super().__init__(model, gp_input_transform, gp_outcome_transform)
+        self.y_dim = kwargs.get("y_dim", 1)
+        self.register_parameter("raw_y_scale",
+                                torch.nn.Parameter(torch.zeros(self.y_dim)))
+        y_scale_prior = kwargs.get("y_scale_prior")
+        if y_scale_prior is not None:
+            self.register_prior("y_scale_prior", y_scale_prior,
+                                self._y_scale_param, self._y_scale_closure)
+        y_scale_constraint = kwargs.get("y_scale_constraint")
+        if y_scale_constraint is not None:
+            self.register_constraint("raw_y_scale", y_scale_constraint)
+
+    @property
+    def y_scale(self):
+        return self._y_scale_param(self)
+
+    @y_scale.setter
+    def y_scale(self, value):
+        self._y_scale_closure(self, value)
+
+    def _y_scale_param(self, m):
+        if hasattr(m, "raw_y_scale_constraint"):
+            return m.raw_y_scale_constraint.transform(m.raw_y_scale)
+        return m.raw_y_scale
+
+    def _y_scale_closure(self, m, value):
+        if not torch.is_tensor(value):
+            value = torch.as_tensor(value).to(m.raw_y_scale)
+        if hasattr(m, "raw_y_scale_constraint"):
+            m.initialize(
+                raw_y_scale=m.raw_y_scale_constraint.inverse_transform(value))
+        else:
+            m.initialize(raw_y_scale=value)
+
+    def output_calibration(self, y):
+        return self.y_scale * y
+
+    def evaluate_model(self, x):
+        return self.output_calibration(self.model(x))
