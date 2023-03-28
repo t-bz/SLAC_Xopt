@@ -213,3 +213,72 @@ class LinearCalibration(LinearInputCalibration, LinearOutputCalibration):
 
     def evaluate_model(self, x):
         return self.output_calibration(self.model(self.input_calibration(x)))
+
+
+class OutputOffsetCalibration(CustomMean):
+    def __init__(
+            self,
+            model: torch.nn.Module,
+            gp_input_transform: torch.nn.Module,
+            gp_outcome_transform: torch.nn.Module,
+            **kwargs,
+    ):
+        """Prior mean with learnable output offset calibration.
+
+        Outputs are augmented by a learnable offset parameter:
+        y = model(x) + y_shift.
+
+        Args:
+            model: Inherited from CustomMean.
+            gp_input_transform: Inherited from CustomMean.
+            gp_outcome_transform: Inherited from CustomMean.
+
+        Keyword Args:
+            y_dim (int): The output dimension. Defaults to 1.
+            y_shift_prior (gpytorch.priors.Prior): Prior over y_shift.
+              Defaults to None.
+            y_shift_constraint (torch.nn.Module): Parameter constraint for
+              y_shift. Defaults to None.
+
+        Attributes:
+            y_shift (torch.nn.Parameter): Parameter tensor of size y_dim.
+        """
+        super().__init__(model, gp_input_transform, gp_outcome_transform)
+        self.y_dim = kwargs.get("y_dim", 1)
+        self.register_parameter("raw_y_shift",
+                                torch.nn.Parameter(torch.zeros(self.y_dim)))
+        y_shift_prior = kwargs.get("y_shift_prior")
+        if y_shift_prior is not None:
+            self.register_prior("y_shift_prior", y_shift_prior,
+                                self._y_shift_param, self._y_shift_closure)
+        y_shift_constraint = kwargs.get("y_shift_constraint")
+        if y_shift_constraint is not None:
+            self.register_constraint("raw_y_shift", y_shift_constraint)
+
+    @property
+    def y_shift(self):
+        return self._y_shift_param(self)
+
+    @y_shift.setter
+    def y_shift(self, value):
+        self._y_shift_closure(self, value)
+
+    def _y_shift_param(self, m):
+        if hasattr(m, "raw_y_shift_constraint"):
+            return m.raw_y_shift_constraint.transform(m.raw_y_shift)
+        return m.raw_y_shift
+
+    def _y_shift_closure(self, m, value):
+        if not torch.is_tensor(value):
+            value = torch.as_tensor(value).to(m.raw_y_shift)
+        if hasattr(m, "raw_y_shift_constraint"):
+            m.initialize(
+                raw_y_shift=m.raw_y_shift_constraint.inverse_transform(value))
+        else:
+            m.initialize(raw_y_shift=value)
+
+    def output_calibration(self, y):
+        return y + self.y_shift
+
+    def evaluate_model(self, x):
+        return self.output_calibration(self.model(x))
