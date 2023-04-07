@@ -22,8 +22,8 @@ configs = ["constant_prior", "no_adjustments", "offset_calibration",
 config = configs[idx_config]
 acq_name = "EI"  # "EI" or "UCB"
 n_init = 3  # number of initial samples
-n_run = 2  # number of runs
-n_step = 5  # number of steps for BO
+n_run = 100  # number of runs
+n_step = 50  # number of steps for BO
 
 # output directory
 output_path = os.path.dirname(__file__) + "/BO/{}/{}/".format(config, acq_name)
