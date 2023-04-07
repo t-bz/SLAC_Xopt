@@ -351,3 +351,101 @@ class OutputScaleCalibration(CustomMean):
 
     def evaluate_model(self, x):
         return self.output_calibration(self.model(x))
+
+
+class OutputOffset(CustomMean):
+    def __init__(
+            self,
+            model: torch.nn.Module,
+            gp_input_transform: torch.nn.Module,
+            gp_outcome_transform: torch.nn.Module,
+            y_shift: float,
+    ):
+        """Prior mean with a constant output offset.
+
+        Args:
+            model: Inherited from CustomMean.
+            gp_input_transform: Inherited from CustomMean.
+            gp_outcome_transform: Inherited from CustomMean.
+            y_shift: Value of the constant output offset.
+        """
+        super().__init__(model, gp_input_transform, gp_outcome_transform)
+        self.y_shift = y_shift
+
+    def evaluate_model(self, x):
+        return self.model(x) + self.y_shift
+
+
+class Flatten(CustomMean):
+    def __init__(
+            self,
+            model: torch.nn.Module,
+            gp_input_transform: torch.nn.Module,
+            gp_outcome_transform: torch.nn.Module,
+            **kwargs,
+    ):
+        """Prior mean composed of a weighted sum with a constant prior.
+
+        The output is a time/step-dependent, weighted sum of the prior mean
+        derived from the given model and a constant prior:
+        y = (1 - w) * model(x) + w * const.
+
+        Args:
+            model: Inherited from CustomMean.
+            gp_input_transform: Inherited from CustomMean.
+            gp_outcome_transform: Inherited from CustomMean.
+
+        Keyword Args:
+            step_range (tuple): Step range over which weighting parameter w
+              is changed from minimum to maximum value. Defaults to (0, 10).
+            w_lim (tuple): Minimum and maximum value of weighting parameter w.
+              Defaults to (0.01, 0.99).
+
+        Attributes:
+            constant (torch.nn.Parameter): Parameter tensor of size y_dim.
+        """
+        super().__init__(model, gp_input_transform, gp_outcome_transform)
+        self.step = 0
+        self.y_dim = kwargs.get("y_dim", 1)
+        self.step_range = kwargs.get("step_range", (0, 10))
+        self.w_lim = kwargs.get("w_lim", (0.01, 0.99))
+        self.register_parameter("constant",
+                                torch.nn.Parameter(torch.zeros(self.y_dim)))
+        constant_prior = kwargs.get("constant_prior")
+        if constant_prior is not None:
+            self.register_prior("constant_prior", constant_prior,
+                                self._constant_param, self._constant_closure)
+        constant_constraint = kwargs.get("constant_constraint")
+        if constant_constraint is not None:
+            self.register_constraint("raw_constant", constant_constraint)
+
+    @property
+    def constant(self):
+        return self._constant_param(self)
+
+    @constant.setter
+    def constant(self, value):
+        self._constant_closure(self, value)
+
+    def _constant_param(self, m):
+        if hasattr(m, "raw_constant_constraint"):
+            return m.raw_constant_constraint.transform(m.raw_constant)
+        return m.raw_constant
+
+    def _constant_closure(self, m, value):
+        if not torch.is_tensor(value):
+            value = torch.as_tensor(value).to(m.raw_constant)
+        if hasattr(m, "raw_constant_constraint"):
+            m.initialize(
+                raw_constant=m.raw_constant_constraint.inverse_transform(value))
+        else:
+            m.initialize(raw_constant=value)
+
+    def evaluate_model(self, x):
+        step_delta = self.step_range[1] - self.step_range[0]
+        m = (self.w_lim[1] - self.w_lim[0]) / step_delta
+        if self.step < self.step_range[0]:
+            w = self.w_lim[0]
+        else:
+            w = self.w_lim[0] + m * (self.step - self.step_range[0])
+        return (1 - w) * self.model(x) + w * self.constant
