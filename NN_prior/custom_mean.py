@@ -448,4 +448,5 @@ class Flatten(CustomMean):
             w = self.w_lim[0]
         else:
             w = self.w_lim[0] + m * (self.step - self.step_range[0])
+        w = torch.clip(torch.tensor(w), min=self.w_lim[0], max=self.w_lim[1])
         return (1 - w) * self.model(x) + w * self.constant
