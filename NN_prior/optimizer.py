@@ -37,6 +37,7 @@ class BayesOpt:
         Attributes:
             x (torch.Tensor): Holds the inputs of the collected data set.
             y (torch.Tensor): Holds the outputs of the collected data set.
+            gp (SingleTaskGP): Holds the current GP model.
         """
         self.surrogate = surrogate
         if ground_truth is None:
@@ -50,6 +51,7 @@ class BayesOpt:
         self.n_init = kwargs.get("n_init", 3)
         self.n_step = kwargs.get("n_step", 50)
         self.x, self.y = None, None
+        self.gp = None
 
     def create_default_gp(self, x: torch.Tensor, y: torch.Tensor,
                           mean_module: Optional[torch.nn.Module] = None,
@@ -123,14 +125,14 @@ class BayesOpt:
             raise ValueError("Found no initial data.")
         t0 = time.time()
         # create GP model and do maximum likelihood fits
-        gp = self.create_gp(self.x, self.y, custom_mean)
-        mll = ExactMarginalLogLikelihood(gp.likelihood, gp)
+        self.gp = self.create_gp(self.x, self.y, custom_mean)
+        mll = ExactMarginalLogLikelihood(self.gp.likelihood, self.gp)
         fit_gpytorch_mll(mll)
         # create and optimize acquisition function using the GP
         if acq_name == "EI":
-            acq = ExpectedImprovement(gp, self.y.max())
+            acq = ExpectedImprovement(self.gp, self.y.max())
         elif acq_name == "UCB":
-            acq = UpperConfidenceBound(gp, beta=2.0)
+            acq = UpperConfidenceBound(self.gp, beta=2.0)
         else:
             info = "Unknown acquisition function: {}".format(acq_name)
             raise ValueError(info)
