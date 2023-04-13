@@ -17,7 +17,7 @@ warnings.filterwarnings('ignore')
 # run configuration
 idx_config = int(sys.argv[1])
 n_epoch = int(sys.argv[2])
-configs = ["constant_prior", "no_adjustments", "offset_calibration",
+configs = ["constant_prior", "no_adjustment", "offset_calibration",
            "scale_calibration", "fixed_offset", "flatten", "alternate"]
 config = configs[idx_config]
 acq_name = "EI"  # "EI" or "UCB"
@@ -55,9 +55,9 @@ if not config == "constant_prior":
     elif config == "scale_calibration":
         custom_mean = OutputScaleCalibration(*params)
     elif config == "fixed_offset":
-        custom_mean = OutputOffset(*params, y_shift=1e-3)
+        custom_mean = OutputOffset(*params, y_shift=5e-3)
     elif config == "flatten":
-        custom_mean = Flatten(*params)
+        custom_mean = Flatten(*params, step_range=(5, 15), w_lim=(0.01, 0.99))
 
 # store data
 x = torch.empty((n_run, n_init + n_step, surrogate.x_dim)).to(dev)
@@ -74,6 +74,15 @@ if custom_mean is not None:
                 p_names.append(name)
 p = torch.empty((len(p_names), n_run, n_step)).to(dev)
 
+# MAE and correlation
+n_samples = 10000
+cutoff_value = None
+x_eval = surrogate.sample_x(n_samples, seed=0)
+y_eval = ground_truth(x_eval).detach()
+mae_const = torch.zeros((n_run, n_step))
+mae_post = torch.zeros((n_run, n_step))
+corr_post = torch.zeros((n_run, n_step))
+
 # BO loop
 print("Started BO Loop...")
 t0 = time.time()
@@ -83,11 +92,18 @@ for run_idx in range(n_run):
     for i in range(n_step):
         if config == "flatten":
             custom_mean.step = i
-        if config == "alternate" and not i % 2 == 0:
+        if config == "alternate" and i % 4 == 0:
             bo.step(None, acq_name=acq_name, fixed_feature=True, verbose=0)
         else:
             bo.step(custom_mean, acq_name=acq_name, fixed_feature=True,
                     verbose=0)
+        if config == "constant_prior":
+            y_const = custom_mean.constant * torch.ones_like(y_eval)
+            mae_const[run_idx, i] = util.calc_mean_absolute_error(y_eval,
+                                                                  y_const)
+        post = bo.gp.posterior(x_eval)
+        mae_post[run_idx, i] = util.calc_mean_absolute_error(y_eval, post.mean)
+        corr_post[run_idx, i] = util.calc_correlation(y_eval, post.mean)
         if p_names:
             for idx_param, name in enumerate(p_names):
                 p[idx_param] = getattr(custom_mean, name).detach()
@@ -101,12 +117,13 @@ else:
 print("Total runtime: {}".format(t_info))
 
 # save data to file
-data = {"x": x, "y": y}
+data = {"x": x, "y": y, "mae_post": mae_post, "corr_post": corr_post}
 if p_names:
     for idx_param, name in enumerate(p_names):
         data[name] = p[idx_param]
 if config == "constant_prior":
     file_name = "constant.pt"
+    data["mae_const"] = torch.tensor(mae_const)
 else:
     file_name = "ep={:d}.pt".format(n_epoch)
 torch.save(data, output_path + file_name)
