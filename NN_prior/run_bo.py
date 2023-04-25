@@ -39,7 +39,7 @@ else:
 # load surrogate model
 surrogate = util.Surrogate()
 Objective = util.NegativeTransverseBeamSize
-ground_truth = Objective(surrogate.model)
+ground_truth = Objective(surrogate.model.to(dev))
 
 # definition of custom mean function
 input_transformer = Normalize(surrogate.x_dim, bounds=surrogate.x_lim.T)
@@ -77,7 +77,7 @@ p = torch.empty((len(p_names), n_run, n_step)).to(dev)
 # MAE and correlation
 n_samples = 10000
 cutoff_value = None
-x_eval = surrogate.sample_x(n_samples, seed=0)
+x_eval = surrogate.sample_x(n_samples, seed=0).to(dev)
 y_eval = ground_truth(x_eval).detach()
 mae_const = torch.zeros((n_run, n_step))
 mae_post = torch.zeros((n_run, n_step))
@@ -98,12 +98,12 @@ for run_idx in range(n_run):
             bo.step(custom_mean, acq_name=acq_name, fixed_feature=True,
                     verbose=0)
         if config == "constant_prior":
-            y_const = custom_mean.constant * torch.ones_like(y_eval)
-            mae_const[run_idx, i] = util.calc_mean_absolute_error(y_eval,
-                                                                  y_const)
-        post = bo.gp.posterior(x_eval)
-        mae_post[run_idx, i] = util.calc_mean_absolute_error(y_eval, post.mean)
-        corr_post[run_idx, i] = util.calc_correlation(y_eval, post.mean)
+            y_const = bo.gp.mean_module.constant * torch.ones_like(y_eval)
+            mae_const[run_idx, i] = util.calc_mean_absolute_error(
+                y_eval, y_const.to(dev))
+        post_mean = bo.gp.posterior(x_eval).mean.to(dev)
+        mae_post[run_idx, i] = util.calc_mean_absolute_error(y_eval, post_mean)
+        corr_post[run_idx, i] = util.calc_correlation(y_eval, post_mean)
         if p_names:
             for idx_param, name in enumerate(p_names):
                 p[idx_param] = getattr(custom_mean, name).detach()
