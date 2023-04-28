@@ -90,7 +90,7 @@ class OccasionalConstant(DynamicCustomMean, ConstantMean):
 
         Keyword Args:
             n (Optional[int]): If not None, a constant prior is used at
-              every n-th step. Defaults to 2.
+              every n-th step. Defaults to None.
             prob (Optional[float]): If not None, determines the probability of
               reverting to a constant prior at every step. Defaults to None.
 
@@ -98,7 +98,7 @@ class OccasionalConstant(DynamicCustomMean, ConstantMean):
             use_constant (bool): Whether a constant prior is used.
         """
         super().__init__(model, step)
-        self.n = kwargs.get("n", 2)
+        self.n = kwargs.get("n")
         self.prob = kwargs.get("prob")
         self.use_constant = False
         r = torch.rand(1)
@@ -140,7 +140,7 @@ class OccasionalModel(OccasionalConstant):
 
         Keyword Args:
             n (Optional[int]): If not None, a model-based prior is used at
-              every n-th step. Defaults to 2.
+              every n-th step. Defaults to None.
             prob (Optional[float]): If not None, determines the probability of
               reverting to a model-based prior at every step. Defaults to None.
 
