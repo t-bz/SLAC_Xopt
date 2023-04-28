@@ -63,7 +63,8 @@ class BOAgent:
                    "corr_posterior", "mae_samples", "corr_samples"]
         self.metrics = {}
         for metric in metrics:
-            self.metrics[metric] = torch.empty((self.n_run, self.n_step))
+            self.metrics[metric] = torch.full(
+                (self.n_run, self.n_step), torch.nan)
 
     def _get_data_set(self, evaluate: Callable, n_samples: int = 3,
                       file: Optional[str] = None) -> pd.DataFrame:
@@ -139,8 +140,10 @@ class BOAgent:
             self.vocs.variable_names + self.vocs.constant_names
         self.data["y_names"] = self.vocs.objective_names
         for key in ["x", "y"]:
-            self.data[key] = torch.empty((self.n_run, self.n_init + self.n_step,
-                                          len(self.data[f"{key}_names"])))
+            self.data[key] = torch.full((self.n_run, self.n_init + self.n_step,
+                                         len(self.data[f"{key}_names"])),
+                                        torch.nan)
+
         mean_variables = _lookup_mean_variables(self.mean.__class__)
         # run BO
         t0 = time.time()
@@ -179,15 +182,15 @@ class BOAgent:
                         if name.startswith("raw_"):
                             name = name[4:]
                         if name not in self.mean_params:
-                            self.mean_params[name] = torch.empty(
-                                (self.n_run, self.n_step))
+                            self.mean_params[name] = torch.full(
+                                (self.n_run, self.n_step), torch.nan)
                         self.mean_params[name][i_run, i_step] = getattr(
                             mean, name).detach()
                 # store variables
                 for name in mean_variables:
                     if name not in self.mean_variables:
-                        self.mean_variables[name] = torch.empty(
-                            (self.n_run, self.n_step))
+                        self.mean_variables[name] = torch.full(
+                            (self.n_run, self.n_step), torch.nan)
                     self.mean_variables[name][i_run, i_step] = getattr(
                         mean, name)
                 # store metrics
