@@ -11,8 +11,8 @@ from bo_agent import BOAgent
 
 
 # define prior mean
-mean_class = Flatten
-mean_kwargs = {"step": 0}
+mean_class = OccasionalConstant
+mean_kwargs = {"step": 0, "n": None, "prob": 0.9}
 
 # select correlated model
 n_epoch = int(sys.argv[1])
@@ -20,10 +20,12 @@ n_epoch = int(sys.argv[1])
 # output directory
 path = "./BO/"
 output_dir = path + "{}/".format(mean_class.__name__)
-for k, v in mean_kwargs.items():
+for i, (k, v) in enumerate(mean_kwargs.items()):
     if not k == "step":
         output_dir += f"{k}="
-        if isinstance(v, tuple):
+        if v is None:
+            output_dir += "None"
+        elif isinstance(v, tuple):
             v_str = []
             for v_i in v:
                 if isinstance(v_i, float):
@@ -33,6 +35,8 @@ for k, v in mean_kwargs.items():
             output_dir += "{}-{}".format(*v_str)
         else:
             output_dir += "{:.2f}".format(v)
+        if not i == len(mean_kwargs) - 1:
+            output_dir += "_"
 if not output_dir.endswith("/"):
     output_dir += "/"
 if not os.path.exists(output_dir):
