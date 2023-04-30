@@ -52,7 +52,7 @@ class Flatten(DynamicCustomMean, ConstantMean):
               parameter w is changed from minimum to maximum value.
               Defaults to (0, 10).
         """
-        super().__init__(model, step)
+        super().__init__(model, step, **kwargs)
         self.w_lim = kwargs.get("w_lim", (0.0, 1.0))
         self.step_range = kwargs.get("step_range", (0, 10))
 
@@ -97,7 +97,7 @@ class OccasionalConstant(DynamicCustomMean, ConstantMean):
         Attributes:
             use_constant (bool): Whether a constant prior is used.
         """
-        super().__init__(model, step)
+        super().__init__(model, step, **kwargs)
         self.n = kwargs.get("n")
         self.prob = kwargs.get("prob")
         self.use_constant = False
