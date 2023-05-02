@@ -149,7 +149,7 @@ class BOAgent:
         # run BO
         t0 = time.time()
         for i_run in range(self.n_run):
-            run_data = self._data_init.copy()
+            run_data = self._data_init.deepcopy()
             for i_step in range(self.n_step):
                 # define prior mean
                 mean_class = self.mean.__class__
