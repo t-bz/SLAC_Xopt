@@ -45,6 +45,8 @@ class BOAgent:
         self.n_step = bo_config.get("n_step", 50)
         self.n_run = bo_config.get("n_run", 1)
         self.n_test = bo_config.get("n_test", 10000)
+        self.get_optimum = bo_config.get("get_optimum", True)
+        self.n_opt = int(self.get_optimum)
         self.objective_name = bo_config.get(
             "objective_name", "negative_sigma_xy")
         if not self.objective_name == "negative_sigma_xy":
@@ -140,10 +142,9 @@ class BOAgent:
             self.vocs.variable_names + self.vocs.constant_names
         self.data["y_names"] = self.vocs.objective_names
         for key in ["x", "y"]:
-            self.data[key] = torch.full((self.n_run, self.n_init + self.n_step,
-                                         len(self.data[f"{key}_names"])),
-                                        torch.nan)
-
+            size = (self.n_run, self.n_init + self.n_step + self.n_opt,
+                    len(self.data[f"{key}_names"]))
+            self.data[key] = torch.full(size=size, fill_value=torch.nan)
         mean_variables = _lookup_mean_variables(self.mean.__class__)
         # run BO
         t0 = time.time()
@@ -199,6 +200,13 @@ class BOAgent:
                                                       run_data)
                 for metric in self.metrics.keys():
                     self.metrics[metric][i_run, i_step] = metrics[metric]
+                # get optimum
+                if i_step == self.n_step - 1 and self.get_optimum:
+                    x_opt = X.generator.get_optimum()
+                    y_opt = pd.DataFrame(evaluate(x_opt.to_dict("index")[0]),
+                                         index=[0])
+                    data_opt = pd.concat([x_opt, y_opt], axis=1)
+                    run_data.loc[len(run_data.index)] = data_opt.iloc[-1]
             # store data
             self.data["x"][i_run] = torch.tensor(
                 run_data[self.vocs.variable_names +
