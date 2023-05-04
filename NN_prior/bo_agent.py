@@ -54,6 +54,7 @@ class BOAgent:
                 f"objective_name {self.objective_name} is not supported"
             )
         self.path = bo_config.get("path", './BO/')
+        self.use_cuda = bo_config.get("use_cuda", False)
         if not os.path.exists(self.path):
             os.makedirs(self.path)
         # storage of data, parameters and metrics
@@ -161,11 +162,13 @@ class BOAgent:
                 mean_modules={self.objective_name: mean},
             )
             if self.acq_name == "EI":
-                generator_options = BayesianOptions(model=model_options)
+                generator_options = BayesianOptions(
+                    model=model_options, use_cuda=self.use_cuda)
                 generator = ExpectedImprovementGenerator(
                     self.vocs, options=generator_options)
             else:
-                generator_options = UCBOptions(model=model_options)
+                generator_options = UCBOptions(
+                    model=model_options, use_cuda=self.use_cuda)
                 generator = UpperConfidenceBoundGenerator(
                     self.vocs, options=generator_options)
             evaluator = Evaluator(function=evaluate)

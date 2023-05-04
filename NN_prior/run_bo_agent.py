@@ -1,5 +1,6 @@
 import os
 import sys
+import torch
 from gpytorch.means import ConstantMean
 from lume_model.torch import LUMEModule
 
@@ -16,6 +17,12 @@ mean_kwargs = {"step": 0, "n": None, "prob": 0.9}
 
 # select correlated model
 n_epoch = int(sys.argv[1])
+
+# check for GPUs
+if torch.cuda.is_available():
+    use_cuda = True
+else:
+    use_cuda = False
 
 # output directory
 path = "./BO/"
@@ -91,7 +98,8 @@ if issubclass(mean_class, CustomMean):
 
 # create BOAgent
 prior_mean = mean_class(**mean_kwargs)
-bo_agent = BOAgent(prior_mean, vocs, {"n_run": 10, "path": path})
+bo_config = {"n_run": 10, "path": path, "use_cuda": use_cuda}
+bo_agent = BOAgent(prior_mean, vocs, bo_config)
 bo_agent.run(evaluate)
 
 # save BOAgent configuration and data history
