@@ -156,12 +156,16 @@ class NegativeTransverseBeamSize(Objective):
         return self.function(sigma_x, sigma_y)
 
 
-class MismatchedGroundTruth(torch.nn.Module):
-    def __init__(self, ground_truth: Callable, **kwargs):
-        """Returns the ground truth function with optional linear mismatches.
+class LinearMismatch(torch.nn.Module):
+    def __init__(
+            self,
+            function: Callable[[torch.Tensor], torch.Tensor],
+            **kwargs
+    ):
+        """Adds linear mismatches to the given function.
 
         Args:
-            ground_truth: Ground truth function.
+            function: A function.
 
         Keyword Args:
             x_dim (int): The input dimension. Defaults to 1.
@@ -171,10 +175,10 @@ class MismatchedGroundTruth(torch.nn.Module):
             y_shift (torch.Tensor): A tensor of shape (1). Defaults to zero.
             y_scale (torch.Tensor): A tensor of shape (1). Defaults to one.
         """
-        super(MismatchedGroundTruth, self).__init__()
-        self.ground_truth = ground_truth
-        assert callable(self.ground_truth), \
-            "Expected ground_truth to be callable"
+        super(LinearMismatch, self).__init__()
+        self.function = function
+        assert callable(self.function), \
+            "Expected function to be callable"
 
         # parameters for mismatch in x
         x_dim = kwargs.get("x_dim", 1)
@@ -198,7 +202,7 @@ class MismatchedGroundTruth(torch.nn.Module):
     def forward(self, x):
         """Expects tensor of shape (n_batch, n_samples, n_dim)"""
         mismatched_x = self.x_scale * x + self.x_shift
-        y = self.y_scale * self.ground_truth(mismatched_x) + self.y_shift
+        y = self.y_scale * self.function(mismatched_x) + self.y_shift
         return y
 
 
