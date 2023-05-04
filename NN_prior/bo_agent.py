@@ -241,8 +241,7 @@ class BOAgent:
             "mean_name": self.mean.__class__.__name__,
             "mean_config": mean_config,
             "vocs": self.vocs,
-            "bo_config": self.bo_config,
-            "path": self.path
+            "bo_config": self.bo_config
         }
         if save_history:
             history = {
