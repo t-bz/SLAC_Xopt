@@ -8,7 +8,7 @@ from xopt.vocs import VOCS
 from xopt.evaluator import Evaluator
 from xopt.generators import UpperConfidenceBoundGenerator, \
     ExpectedImprovementGenerator
-from xopt.generators.bayesian.options import ModelOptions
+from xopt.generators.bayesian.options import ModelOptions, OptimOptions
 from xopt.generators.bayesian.expected_improvement import BayesianOptions
 from xopt.generators.bayesian.upper_confidence_bound import UCBOptions
 from gpytorch.means.mean import Mean
@@ -55,6 +55,8 @@ class BOAgent:
             )
         self.path = bo_config.get("path", './BO/')
         self.use_cuda = bo_config.get("use_cuda", False)
+        self.num_restarts = bo_config.get("num_restarts", 5)
+        self.raw_samples = bo_config.get("raw_samples", 20)
         if not os.path.exists(self.path):
             os.makedirs(self.path)
         # storage of data, parameters and metrics
@@ -161,14 +163,18 @@ class BOAgent:
                 name="trainable_mean_standard",
                 mean_modules={self.objective_name: mean},
             )
+            optim_options = OptimOptions(num_restarts=self.num_restarts,
+                                         raw_samples=self.raw_samples)
             if self.acq_name == "EI":
                 generator_options = BayesianOptions(
-                    model=model_options, use_cuda=self.use_cuda)
+                    model=model_options, optim=optim_options,
+                    use_cuda=self.use_cuda)
                 generator = ExpectedImprovementGenerator(
                     self.vocs, options=generator_options)
             else:
                 generator_options = UCBOptions(
-                    model=model_options, use_cuda=self.use_cuda)
+                    model=model_options, optim=optim_options,
+                    use_cuda=self.use_cuda)
                 generator = UpperConfidenceBoundGenerator(
                     self.vocs, options=generator_options)
             evaluator = Evaluator(function=evaluate)
