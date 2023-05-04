@@ -149,34 +149,40 @@ class BOAgent:
         # run BO
         t0 = time.time()
         for i_run in range(self.n_run):
-            run_data = self._data_init.copy(deep=True)
+            # define prior mean
+            mean_class = self.mean.__class__
+            if issubclass(mean_class, DynamicCustomMean):
+                mean = mean_class(self.mean.model, step=0, **self.mean.config)
+            else:
+                mean = self.mean
+            # Xopt definitions
+            model_options = ModelOptions(
+                name="trainable_mean_standard",
+                mean_modules={self.objective_name: mean},
+            )
+            if self.acq_name == "EI":
+                generator_options = BayesianOptions(model=model_options)
+                generator = ExpectedImprovementGenerator(
+                    self.vocs, options=generator_options)
+            else:
+                generator_options = UCBOptions(model=model_options)
+                generator = UpperConfidenceBoundGenerator(
+                    self.vocs, options=generator_options)
+            evaluator = Evaluator(function=evaluate)
+            X = Xopt(generator=generator, evaluator=evaluator,
+                     vocs=self.vocs, data=self._data_init.copy(deep=True))
+            # optimization loop
             for i_step in range(self.n_step):
                 # define prior mean
-                mean_class = self.mean.__class__
                 if issubclass(mean_class, DynamicCustomMean):
                     mean = mean_class(self.mean.model, step=i_step,
                                       **self.mean.config)
                 else:
                     mean = self.mean
-                # run Xopt
-                model_options = ModelOptions(
-                    name="trainable_mean_standard",
-                    mean_modules={self.objective_name: mean},
-                )
-                if self.acq_name == "EI":
-                    generator_options = BayesianOptions(model=model_options)
-                    generator = ExpectedImprovementGenerator(
-                        self.vocs, options=generator_options)
-                else:
-                    generator_options = UCBOptions(model=model_options)
-                    generator = UpperConfidenceBoundGenerator(
-                        self.vocs, options=generator_options)
-                evaluator = Evaluator(function=evaluate)
-                X = Xopt(generator=generator, evaluator=evaluator,
-                         vocs=self.vocs, data=run_data)
+                X.generator.options.model.mean_modules[
+                    self.objective_name] = mean
+                # optimization step
                 X.step()
-                # update data set
-                run_data.loc[len(run_data.index)] = X.data.iloc[-1]
                 # store parameters
                 for name, param in mean.named_parameters():
                     if param.requires_grad:
@@ -197,16 +203,17 @@ class BOAgent:
                 # store metrics
                 with torch.no_grad():
                     metrics = self._calculate_metrics(mean, X.generator.model,
-                                                      run_data)
+                                                      X.data)
                 for metric in self.metrics.keys():
                     self.metrics[metric][i_run, i_step] = metrics[metric]
-                # get optimum
-                if i_step == self.n_step - 1 and self.get_optimum:
-                    x_opt = X.generator.get_optimum()
-                    y_opt = pd.DataFrame(evaluate(x_opt.to_dict("index")[0]),
-                                         index=[0])
-                    data_opt = pd.concat([x_opt, y_opt], axis=1)
-                    run_data.loc[len(run_data.index)] = data_opt.iloc[-1]
+            # get optimum
+            run_data = X.data.copy(deep=True)
+            if self.get_optimum:
+                x_opt = X.generator.get_optimum()
+                y_opt = pd.DataFrame(evaluate(x_opt.to_dict("index")[0]),
+                                     index=[0])
+                data_opt = pd.concat([x_opt, y_opt], axis=1)
+                run_data = pd.concat([run_data, data_opt], axis=0)
             # store data
             self.data["x"][i_run] = torch.tensor(
                 run_data[self.vocs.variable_names +
@@ -226,8 +233,7 @@ class BOAgent:
             "mean_config": mean_config,
             "vocs": self.vocs,
             "bo_config": self.bo_config,
-            "path": self.path,
-
+            "path": self.path
         }
         if save_history:
             history = {
