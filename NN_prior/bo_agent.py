@@ -134,6 +134,26 @@ class BOAgent:
             metrics[metric] = v
         return metrics
 
+    def _store_mean_parameters(self, mean, i_run, i_step):
+        for name, param in mean.named_parameters():
+            if param.requires_grad:
+                if name.startswith("raw_"):
+                    name = name[4:]
+                if name not in self.mean_params:
+                    self.mean_params[name] = torch.full(
+                        (self.n_run, self.n_step), torch.nan)
+                self.mean_params[name][i_run, i_step] = getattr(
+                    mean, name).detach()
+
+    def _store_mean_variables(self, mean, i_run, i_step):
+        mean_variables = _lookup_mean_variables(self.mean.__class__)
+        for name in mean_variables:
+            if name not in self.mean_variables:
+                self.mean_variables[name] = torch.full(
+                    (self.n_run, self.n_step), torch.nan)
+            self.mean_variables[name][i_run, i_step] = getattr(
+                mean, name)
+
     def run(self, evaluate: Callable):
         # create initial and test data sets
         if self._data_init is None:
@@ -148,7 +168,6 @@ class BOAgent:
             size = (self.n_run, self.n_init + self.n_step + self.n_opt,
                     len(self.data[f"{key}_names"]))
             self.data[key] = torch.full(size=size, fill_value=torch.nan)
-        mean_variables = _lookup_mean_variables(self.mean.__class__)
         # run BO
         t0 = time.time()
         for i_run in range(self.n_run):
@@ -193,22 +212,9 @@ class BOAgent:
                 # optimization step
                 X.step()
                 # store parameters
-                for name, param in mean.named_parameters():
-                    if param.requires_grad:
-                        if name.startswith("raw_"):
-                            name = name[4:]
-                        if name not in self.mean_params:
-                            self.mean_params[name] = torch.full(
-                                (self.n_run, self.n_step), torch.nan)
-                        self.mean_params[name][i_run, i_step] = getattr(
-                            mean, name).detach()
+                self._store_mean_parameters(mean, i_run, i_step)
                 # store variables
-                for name in mean_variables:
-                    if name not in self.mean_variables:
-                        self.mean_variables[name] = torch.full(
-                            (self.n_run, self.n_step), torch.nan)
-                    self.mean_variables[name][i_run, i_step] = getattr(
-                        mean, name)
+                self._store_mean_variables(mean, i_run, i_step)
                 # store metrics
                 with torch.no_grad():
                     metrics = self._calculate_metrics(mean, X.generator.model,
