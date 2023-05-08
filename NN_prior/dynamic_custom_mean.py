@@ -101,11 +101,11 @@ class OccasionalConstant(DynamicCustomMean, ConstantMean):
         self.n = kwargs.get("n")
         self.prob = kwargs.get("prob")
         self.use_constant = False
-        r = torch.rand(1)
         if self.n is not None:
-            if not (self.step + 1) % self.n == 0:
+            if (self.step + 1) % self.n == 0:
                 self.use_constant = True
-        elif self.prob is not None and not self.use_constant:
+        if self.prob is not None and not self.use_constant:
+            r = torch.rand(1)
             if r < self.prob:
                 self.use_constant = True
 
