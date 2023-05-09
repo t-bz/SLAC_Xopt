@@ -1,5 +1,5 @@
 import torch
-from typing import Optional, Tuple
+from typing import  Tuple
 from gpytorch.means import ConstantMean
 
 from custom_mean import CustomMean
@@ -89,10 +89,10 @@ class OccasionalConstant(DynamicCustomMean, ConstantMean):
             step: Inherited from DynamicCustomMean.
 
         Keyword Args:
-            n (Optional[int]): If not None, a constant prior is used at
-              every n-th step. Defaults to None.
-            prob (Optional[float]): If not None, determines the probability of
-              reverting to a constant prior at every step. Defaults to None.
+            n (int): If not None, a constant prior is used at every n-th step.
+              Defaults to None.
+            prob (float): If not None, determines the probability of reverting
+              to a constant prior at every step. Defaults to None.
 
         Attributes:
             use_constant (bool): Whether a constant prior is used.
@@ -139,10 +139,10 @@ class OccasionalModel(OccasionalConstant):
             step: Inherited from DynamicCustomMean.
 
         Keyword Args:
-            n (Optional[int]): If not None, a model-based prior is used at
-              every n-th step. Defaults to None.
-            prob (Optional[float]): If not None, determines the probability of
-              reverting to a model-based prior at every step. Defaults to None.
+            n (int): If not None, a model-based prior is used at every n-th
+              step. Defaults to None.
+            prob (float): If not None, determines the probability of reverting
+              to a model-based prior at every step. Defaults to None.
 
         Attributes:
             use_constant (bool): Whether a constant prior is used.
