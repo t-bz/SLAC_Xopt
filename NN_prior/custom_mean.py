@@ -1,6 +1,7 @@
 import torch
 from typing import Optional, Union
 from gpytorch.priors import Prior, NormalPrior, GammaPrior
+from gpytorch.means import ConstantMean
 from gpytorch.means.mean import Mean
 from gpytorch.constraints import Interval, Positive
 
@@ -128,7 +129,7 @@ class InputScaleCalibration(CustomMean):
             x_scale_dim (int): Dimension of the x_scale parameter.
               Defaults to 1.
             x_scale_prior (Optional[Prior]): Prior for x_scale parameter.
-              Defaults to a Gamma distribution (concentration=2.0, rate=2.0).
+              Defaults to a Gamma distribution (concentration=1.0, rate=1.0).
             x_scale_constraint (Optional[Interval]): Constraint for x_scale
               parameter. Defaults to Positive().
             x_scale_fixed (Union[float, torch.Tensor]): Provides the option to
@@ -143,15 +144,16 @@ class InputScaleCalibration(CustomMean):
         x_scale_dim = kwargs.get("x_scale_dim", 1)
         self.register_parameter("raw_x_scale",
                                 torch.nn.Parameter(torch.ones(x_scale_dim)))
+        # mean=1.0, std=1.0
         x_scale_prior = kwargs.get(
-            "y_scale_prior",
-            GammaPrior(concentration=2.0 * torch.ones((1, x_scale_dim)),
-                       rate=2.0 * torch.ones((1, x_scale_dim)))
+            "x_scale_prior",
+            GammaPrior(concentration=1.0 * torch.ones((1, x_scale_dim)),
+                       rate=1.0 * torch.ones((1, x_scale_dim)))
         )
         if x_scale_prior is not None:
             self.register_prior("x_scale_prior", x_scale_prior,
                                 self._x_scale_param, self._x_scale_closure)
-        x_scale_constraint = kwargs.get("y_scale_constraint", Positive())
+        x_scale_constraint = kwargs.get("x_scale_constraint", Positive())
         if x_scale_constraint is not None:
             self.register_constraint("raw_x_scale", x_scale_constraint)
             # correct initial value
@@ -331,7 +333,7 @@ class OutputScaleCalibration(CustomMean):
         Keyword Args:
             y_scale_dim: Dimension of the y_scale parameter. Defaults to 1.
             y_scale_prior (Optional[Prior]): Prior for y_scale parameter.
-              Defaults to a Gamma distribution (concentration=2.0, rate=2.0).
+              Defaults to a Gamma distribution (concentration=1.0, rate=1.0).
             y_scale_constraint (Optional[Interval]): Constraint for y_scale
               parameter. Defaults to Positive().
             y_scale_fixed (Union[float, torch.Tensor]): Provides the option to
@@ -346,10 +348,11 @@ class OutputScaleCalibration(CustomMean):
         y_scale_dim = kwargs.get("y_scale_dim", 1)
         self.register_parameter("raw_y_scale",
                                 torch.nn.Parameter(torch.ones(y_scale_dim)))
+        # mean=1.0, std=1.0
         y_scale_prior = kwargs.get(
             "y_scale_prior",
-            GammaPrior(concentration=2.0 * torch.ones((1, y_scale_dim)),
-                       rate=2.0 * torch.ones((1, y_scale_dim)))
+            GammaPrior(concentration=1.0 * torch.ones((1, y_scale_dim)),
+                       rate=1.0 * torch.ones((1, y_scale_dim)))
         )
         if y_scale_prior is not None:
             self.register_prior("y_scale_prior", y_scale_prior,
