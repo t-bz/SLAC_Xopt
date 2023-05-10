@@ -1,5 +1,5 @@
 import torch
-from typing import  Tuple
+from typing import Tuple
 from gpytorch.means import ConstantMean
 
 from custom_mean import CustomMean

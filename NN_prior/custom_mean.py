@@ -164,7 +164,7 @@ class InputScaleCalibration(CustomMean):
         x_scale_fixed = kwargs.get("x_scale_fixed", None)
         if x_scale_fixed is not None:
             self.raw_x_scale.data = x_scale_fixed
-            if x_scale_fixed is not None:
+            if x_scale_constraint is not None:
                 raw_x_scale = self.raw_x_scale_constraint.inverse_transform(
                     torch.tensor(x_scale_fixed))
                 self.raw_x_scale.data = raw_x_scale
