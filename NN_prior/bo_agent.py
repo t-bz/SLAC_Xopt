@@ -71,6 +71,13 @@ class BOAgent:
             self.metrics[metric] = torch.full(
                 (self.n_run, self.n_step), torch.nan)
 
+    @property
+    def _tkwargs(self):
+        device = "cpu"
+        if self.use_cuda:
+            device = "cuda"
+        return {"dtype": torch.double, "device": device}
+
     def _get_data_set(self, evaluate: Callable, n_samples: int = 3,
                       file: Optional[str] = None) -> pd.DataFrame:
         if os.path.isfile(file):
@@ -95,16 +102,18 @@ class BOAgent:
 
     def _calculate_metrics(self, mean, model, run_data) -> dict:
         x_test_variables = torch.tensor(
-            self._data_test[self.vocs.variable_names].values)
+            self._data_test[self.vocs.variable_names].values, **self._tkwargs)
         y_test = torch.tensor(
-            self._data_test[self.vocs.objective_names].values).squeeze()
+            self._data_test[self.vocs.objective_names].values,
+            **self._tkwargs).squeeze()
         y_test_prior = mean(x_test_variables).squeeze()
         y_test_posterior = model.posterior(
             x_test_variables.unsqueeze(1)).mean.detach().squeeze()
         x_samples_variables = torch.tensor(
-            run_data[self.vocs.variable_names].values)
+            run_data[self.vocs.variable_names].values, **self._tkwargs)
         y_samples = torch.tensor(
-            run_data[self.vocs.objective_names].values).squeeze()
+            run_data[self.vocs.objective_names].values,
+            **self._tkwargs).squeeze()
         y_samples_prior = mean(x_samples_variables).squeeze()
         metrics = {}
         for metric in self.metrics.keys():
@@ -174,7 +183,8 @@ class BOAgent:
             # define prior mean
             mean_class = self.mean.__class__
             if issubclass(mean_class, DynamicCustomMean):
-                mean = mean_class(self.mean.model, step=0, **self.mean.config)
+                mean = mean_class(self.mean.model, step=0,
+                                  **self.mean.config)
             else:
                 mean = self.mean
             # Xopt definitions
