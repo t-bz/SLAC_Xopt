@@ -19,10 +19,9 @@ mean_kwargs = {"step": 0, "n": None, "prob": 0.9}
 n_epoch = int(sys.argv[1])
 
 # check for GPUs
+use_cuda, device = False, "cpu"
 if torch.cuda.is_available():
-    use_cuda = True
-else:
-    use_cuda = False
+    use_cuda, device = True, "cuda"
 
 # output directory
 path = "./BO/"
@@ -53,7 +52,8 @@ if not os.path.exists(output_dir):
 surrogate = load_surrogate(
     "configs/lcls_variables.yml",
     "configs/normalization.json",
-    "torch_model.pt"
+    "torch_model.pt",
+    device=device,
 )
 surrogate._model.eval()
 surrogate._model.requires_grad_(False)
@@ -63,8 +63,6 @@ vocs = create_vocs(surrogate, objective_name)
 
 surrogate_module = LUMEModule(surrogate, vocs.variable_names,
                               ["sigma_x", "sigma_y"])
-surrogate_module.eval()
-surrogate_module.requires_grad_(False)
 
 Objective = NegativeTransverseBeamSize
 ground_truth = Objective(surrogate_module)
@@ -85,19 +83,18 @@ if issubclass(mean_class, CustomMean):
         "configs/lcls_variables.yml",
         "corr_models/x_transformer.pt",
         "corr_models/y_transformer.pt",
-        "corr_models/{:d}ep.pt".format(n_epoch)
+        "corr_models/{:d}ep.pt".format(n_epoch),
+        device=device,
     )
     corr_model._model.eval()
     corr_model._model.requires_grad_(False)
 
     corr_module = LUMEModule(corr_model, vocs.variable_names,
                              ["sigma_x", "sigma_y"])
-    corr_module.eval()
-    corr_module.requires_grad_(False)
     mean_kwargs["model"] = Objective(corr_module)
 
 # create BOAgent
-prior_mean = mean_class(**mean_kwargs)
+prior_mean = mean_class(**mean_kwargs).to(device)
 bo_config = {"n_run": 10, "path": path, "use_cuda": use_cuda}
 bo_agent = BOAgent(prior_mean, vocs, bo_config)
 bo_agent.run(evaluate)
