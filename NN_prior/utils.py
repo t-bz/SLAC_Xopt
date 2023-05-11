@@ -11,7 +11,7 @@ from xopt.vocs import VOCS
 
 
 def load_surrogate(variable_file: str, normalizations_file: str,
-                   model_file: str) -> PyTorchModel:
+                   model_file: str, **kwargs) -> PyTorchModel:
     """Loads the LCLS injector NN surrogate model from file.
 
     Args:
@@ -21,9 +21,14 @@ def load_surrogate(variable_file: str, normalizations_file: str,
           transformers for the surrogate model.
         model_file: Path to the torch-file defining the NN model.
 
+    Keyword Args:
+        device (Union[torch.device, str]): Device on which the model will be
+          evaluated. Defaults to "cpu".
+
     Returns:
         The LCLS injector NN surrogate model as a PyTorchModel.
     """
+    device = kwargs.get("device", "cpu")
     with open(variable_file) as f:
         input_variables, output_variables = variables_from_yaml(f)
 
@@ -46,12 +51,14 @@ def load_surrogate(variable_file: str, normalizations_file: str,
         input_variables, output_variables,
         input_transformers=[transformers[0]],
         output_transformers=[transformers[1]],
+        device=device,
     )
     return surrogate
 
 
 def load_corr_model(variable_file: str, x_transformer_file: str,
-                    y_transformer_file: str, model_file: str):
+                    y_transformer_file: str, model_file: str,
+                    **kwargs) -> PyTorchModel:
     """Loads a model correlated to the LCLS injector NN surrogate from file.
 
     Args:
@@ -63,9 +70,14 @@ def load_corr_model(variable_file: str, x_transformer_file: str,
           transformer for the correlated model.
         model_file: Path to the torch-file defining the NN model.
 
+    Keyword Args:
+        device (Union[torch.device, str]): Device on which the model will be
+          evaluated. Defaults to "cpu".
+
     Returns:
         The correlated model as a PyTorchModel.
     """
+    device = kwargs.get("device", "cpu")
     with open(variable_file) as f:
         input_variables, output_variables = variables_from_yaml(f)
 
@@ -81,6 +93,7 @@ def load_corr_model(variable_file: str, x_transformer_file: str,
         input_variables, output_variables,
         input_transformers=[x_transformer],
         output_transformers=[y_transformer],
+        device=device,
     )
     return corr_model
 
