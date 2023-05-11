@@ -8,3 +8,9 @@
 /httpRequests/
 .idea
 *.pyc
+# macOS file system
+.DS_Store
+# Jupyter Notebook
+.ipynb_checkpoints
+# Compiled Python files
+*.pyc
