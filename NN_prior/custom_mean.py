@@ -144,11 +144,11 @@ class InputScaleCalibration(CustomMean):
         x_scale_dim = kwargs.get("x_scale_dim", 1)
         self.register_parameter("raw_x_scale",
                                 torch.nn.Parameter(torch.ones(x_scale_dim)))
-        # mean=1.0, std=1.0
+        # mean=1.0, std=0.5
         x_scale_prior = kwargs.get(
             "x_scale_prior",
-            GammaPrior(concentration=1.0 * torch.ones((1, x_scale_dim)),
-                       rate=1.0 * torch.ones((1, x_scale_dim)))
+            GammaPrior(concentration=2.0 * torch.ones((1, x_scale_dim)),
+                       rate=2.0 * torch.ones((1, x_scale_dim)))
         )
         if x_scale_prior is not None:
             self.register_prior("x_scale_prior", x_scale_prior,
@@ -348,11 +348,11 @@ class OutputScaleCalibration(CustomMean):
         y_scale_dim = kwargs.get("y_scale_dim", 1)
         self.register_parameter("raw_y_scale",
                                 torch.nn.Parameter(torch.ones(y_scale_dim)))
-        # mean=1.0, std=1.0
+        # mean=1.0, std=0.5
         y_scale_prior = kwargs.get(
             "y_scale_prior",
-            GammaPrior(concentration=1.0 * torch.ones((1, y_scale_dim)),
-                       rate=1.0 * torch.ones((1, y_scale_dim)))
+            GammaPrior(concentration=2.0 * torch.ones((1, y_scale_dim)),
+                       rate=2.0 * torch.ones((1, y_scale_dim)))
         )
         if y_scale_prior is not None:
             self.register_prior("y_scale_prior", y_scale_prior,
