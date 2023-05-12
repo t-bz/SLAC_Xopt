@@ -464,3 +464,81 @@ class LinearCalibration(LinearInputCalibration, LinearOutputCalibration):
     def forward(self, x):
         _x = self.linear_input_calibration(x)
         return self.linear_output_calibration(self.model(_x))
+
+
+class TrainableFlatten(CustomMean, ConstantMean):
+    def __init__(
+            self,
+            model: torch.nn.Module,
+            **kwargs
+    ):
+        """Prior mean composed of a weighted sum with a constant prior.
+
+        The output is a weighted sum of the prior mean derived from the given
+        model and a constant prior:
+        y = (1 - w) * model(x) + w * constant_mean.
+
+        Args:
+            model: Inherited from CustomMean.
+
+        Keyword Args:
+            w_init (Union[float, torch.Tensor]): Sets the initial parameter
+              value. Defaults to 0.5.
+            w_prior (Optional[Prior]): Prior for w parameter. Defaults to None.
+            w_constraint (Optional[Interval]): Constraint for w parameter.
+              Defaults to Interval(0.0, 1.0).
+            w_fixed (Union[float, torch.Tensor]): Provides the option to
+              use a fixed parameter value. Defaults to None.
+
+        Attributes:
+            raw_w (torch.nn.Parameter): Unconstrained weighting parameter.
+            w (torch.nn.Parameter): Constrained version of raw_w.
+        """
+        super().__init__(model, **kwargs)
+        w_init = torch.tensor(kwargs.get("w_init", 0.5))
+        self.register_parameter("raw_w", torch.nn.Parameter(w_init))
+        w_prior = kwargs.get("w_prior", None)
+        if w_prior is not None:
+            self.register_prior("w_prior", w_prior,
+                                self._w_param, self._w_closure)
+        w_constraint = kwargs.get("w_constraint", Interval(0.0, 1.0))
+        if w_constraint is not None:
+            self.register_constraint("raw_w", w_constraint)
+            # correct initial value
+            raw_w_init = self.raw_w_constraint.inverse_transform(w_init)
+            self.raw_w.data = raw_w_init
+        # option to use a fixed parameter
+        w_fixed = kwargs.get("w_fixed", None)
+        if w_fixed is not None:
+            self.raw_w.data = w_fixed
+            if w_constraint is not None:
+                raw_w = self.raw_w_constraint.inverse_transform(
+                    torch.tensor(w_fixed))
+                self.raw_w.data = raw_w
+            self.raw_w.requires_grad = False
+
+    @property
+    def w(self):
+        return self._w_param(self)
+
+    @w.setter
+    def w(self, value):
+        self._w_closure(self, value)
+
+    def _w_param(self, m):
+        if hasattr(m, "raw_w_constraint"):
+            return m.raw_w_constraint.transform(m.raw_w)
+        return m.raw_w
+
+    def _w_closure(self, m, value):
+        if not torch.is_tensor(value):
+            value = torch.as_tensor(value).to(m.raw_w)
+        if hasattr(m, "raw_w_constraint"):
+            m.initialize(
+                raw_w=m.raw_w_constraint.inverse_transform(value))
+        else:
+            m.initialize(raw_w=value)
+
+    def forward(self, x):
+        w = self.w
+        return (1 - w) * self.model(x) + w * self.constant
