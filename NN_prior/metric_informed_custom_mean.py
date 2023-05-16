@@ -103,7 +103,9 @@ class CorrelatedFlatten(MetricInformedCustomMean, ConstantMean):
     @property
     def w(self):
         w = 1 - self.correlation + self.w_offset
-        return torch.clip(torch.tensor(w), min=self.w_lim[0], max=self.w_lim[1])
+        if not isinstance(w, torch.Tensor):
+            w = torch.tensor(w)
+        return torch.clip(w, min=self.w_lim[0], max=self.w_lim[1])
 
     def forward(self, x):
         w = self.w

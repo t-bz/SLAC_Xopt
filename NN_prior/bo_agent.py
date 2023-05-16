@@ -16,8 +16,11 @@ from gpytorch.means import ConstantMean
 
 import custom_mean
 import dynamic_custom_mean
+import metric_informed_custom_mean
 from dynamic_custom_mean import DynamicCustomMean, Flatten, OccasionalModel, \
     OccasionalConstant
+from metric_informed_custom_mean import MetricInformedCustomMean, \
+    CorrelationThreshold, CorrelatedFlatten
 from utils import calc_mae, calc_corr, print_runtime
 
 
@@ -185,6 +188,9 @@ class BOAgent:
             if issubclass(mean_class, DynamicCustomMean):
                 mean = mean_class(self.mean.model, step=0,
                                   **self.mean.config)
+            elif issubclass(mean_class, MetricInformedCustomMean):
+                mean = mean_class(self.mean.model, metrics={},
+                                  **self.mean.config)
             else:
                 mean = self.mean
             # Xopt definitions
@@ -215,6 +221,16 @@ class BOAgent:
                 if issubclass(mean_class, DynamicCustomMean):
                     mean = mean_class(self.mean.model, step=i_step,
                                       **self.mean.config)
+                elif issubclass(mean_class, MetricInformedCustomMean):
+                    if i_step == 0:
+                        correlation = 1.0
+                    else:
+                        correlation = self.metrics[
+                            "corr_samples"][i_run, i_step - 1]
+                    mean = mean_class(
+                        self.mean.model, metrics={"correlation": correlation},
+                        **self.mean.config
+                    )
                 else:
                     mean = self.mean
                 X.generator.options.model.mean_modules[
@@ -301,6 +317,8 @@ def _get_mean_class(name: str):
         return custom_mean.__dict__[name]
     elif name in dynamic_custom_mean.__dict__.keys():
         return dynamic_custom_mean.__dict__[name]
+    elif name in metric_informed_custom_mean.__dict__.keys():
+        return metric_informed_custom_mean.__dict__[name]
     else:
         raise ValueError(f"Unknown mean class: {name}")
 
@@ -313,5 +331,10 @@ def _lookup_mean_variables(mean_class: Type[Mean]) -> list:
             variable_names.append("w")
         elif mean_class.__name__ in [OccasionalConstant.__name__,
                                      OccasionalModel.__name__]:
+            variable_names.append("use_constant")
+    elif issubclass(mean_class, MetricInformedCustomMean):
+        if mean_class.__name__ == CorrelatedFlatten.__name__:
+            variable_names.append("w")
+        elif mean_class.__name__ == CorrelationThreshold.__name__:
             variable_names.append("use_constant")
     return variable_names

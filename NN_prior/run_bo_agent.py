@@ -8,12 +8,13 @@ from custom_mean import CustomMean
 from utils import NegativeTransverseBeamSize
 from utils import load_surrogate, load_corr_model, create_vocs
 from dynamic_custom_mean import Flatten, OccasionalConstant, OccasionalModel
+from metric_informed_custom_mean import CorrelationThreshold, CorrelatedFlatten
 from bo_agent import BOAgent
 
 
 # define prior mean
-mean_class = OccasionalConstant
-mean_kwargs = {"step": 0, "n": None, "prob": 0.9}
+mean_class = CorrelatedFlatten
+mean_kwargs = {"metrics": {}, "w_offset": 0.1}
 
 # select correlated model
 n_epoch = int(sys.argv[1])
@@ -27,7 +28,7 @@ if torch.cuda.is_available():
 path = "./BO/"
 output_dir = path + "{}/".format(mean_class.__name__)
 for i, (k, v) in enumerate(mean_kwargs.items()):
-    if not k == "step":
+    if k not in ["step", "metrics"]:
         output_dir += f"{k}="
         if v is None:
             output_dir += "None"
@@ -95,7 +96,7 @@ if issubclass(mean_class, CustomMean):
 
 # create BOAgent
 prior_mean = mean_class(**mean_kwargs).to(device)
-bo_config = {"n_run": 10, "path": path, "use_cuda": use_cuda}
+bo_config = {"n_run": 2, "path": path, "use_cuda": use_cuda, "n_step": 3}
 bo_agent = BOAgent(prior_mean, vocs, bo_config)
 bo_agent.run(evaluate)
 
