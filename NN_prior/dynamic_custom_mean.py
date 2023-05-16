@@ -51,6 +51,9 @@ class Flatten(DynamicCustomMean, ConstantMean):
             step_range (Tuple[int, int]): Step range over which weighting
               parameter w is changed from minimum to maximum value.
               Defaults to (0, 10).
+
+        Attributes:
+            w (float): Weighting parameter.
         """
         super().__init__(model, step, **kwargs)
         self.w_lim = kwargs.get("w_lim", (0.0, 1.0))
