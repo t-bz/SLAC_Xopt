@@ -37,9 +37,9 @@ class Flatten(DynamicCustomMean, ConstantMean):
 
         The output is a step-dependent, weighted sum of the prior mean
         derived from the given model and a constant prior:
-        y = (1 - w) * model(x) + w * constant_mean.
-        The weighting parameter w is linearly increased from its minimal
-        to its maximal value over a fixed sequence of steps.
+        y = w * model(x) + (1 - w) * constant_mean.
+        The weighting parameter w is linearly decreased from its maximum
+        to its minimum value over a fixed sequence of steps.
 
         Args:
             model: Inherited from DynamicCustomMean.
@@ -49,7 +49,7 @@ class Flatten(DynamicCustomMean, ConstantMean):
             w_lim (Tuple[float, float]): Minimum and maximum value of
               weighting parameter w. Defaults to (0.0, 1.0).
             step_range (Tuple[int, int]): Step range over which weighting
-              parameter w is changed from minimum to maximum value.
+              parameter w is changed from maximum to minimum value.
               Defaults to (0, 10).
 
         Attributes:
@@ -64,14 +64,14 @@ class Flatten(DynamicCustomMean, ConstantMean):
         step_delta = self.step_range[1] - self.step_range[0]
         m = (self.w_lim[1] - self.w_lim[0]) / step_delta
         if self.step < self.step_range[0]:
-            w = self.w_lim[0]
+            w = self.w_lim[1]
         else:
-            w = self.w_lim[0] + m * (self.step - self.step_range[0])
+            w = self.w_lim[1] - m * (self.step - self.step_range[0])
         return torch.clip(torch.tensor(w), min=self.w_lim[0], max=self.w_lim[1])
 
     def forward(self, x):
         w = self.w
-        return (1 - w) * self.model(x) + w * self.constant
+        return w * self.model(x) + (1 - w) * self.constant
 
 
 class OccasionalConstant(DynamicCustomMean, ConstantMean):

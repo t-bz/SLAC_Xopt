@@ -476,7 +476,7 @@ class TrainableFlatten(CustomMean, ConstantMean):
 
         The output is a weighted sum of the prior mean derived from the given
         model and a constant prior:
-        y = (1 - w) * model(x) + w * constant_mean.
+        y = w * model(x) + (1 - w) * constant_mean.
 
         Args:
             model: Inherited from CustomMean.
@@ -541,4 +541,4 @@ class TrainableFlatten(CustomMean, ConstantMean):
 
     def forward(self, x):
         w = self.w
-        return (1 - w) * self.model(x) + w * self.constant
+        return w * self.model(x) + (1 - w) * self.constant

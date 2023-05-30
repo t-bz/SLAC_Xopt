@@ -77,10 +77,10 @@ class CorrelatedFlatten(MetricInformedCustomMean, ConstantMean):
 
         The output is a weighted sum of the prior mean derived from the given
         model and a constant prior:
-        y = (1 - w) * model(x) + w * constant_mean,
-        with the weighting parameter w being the determined by the given
+        y = w * model(x) + (1 - w) * constant_mean,
+        with the weighting parameter w being determined by the given
         correlation and offset:
-        w = 1 - correlation + offset.
+        w = correlation - offset.
 
         Args:
             model: Inherited from MetricInformedCustomMean.
@@ -102,11 +102,11 @@ class CorrelatedFlatten(MetricInformedCustomMean, ConstantMean):
 
     @property
     def w(self):
-        w = 1 - self.correlation + self.w_offset
+        w = self.correlation - self.w_offset
         if not isinstance(w, torch.Tensor):
             w = torch.tensor(w)
         return torch.clip(w, min=self.w_lim[0], max=self.w_lim[1])
 
     def forward(self, x):
         w = self.w
-        return (1 - w) * self.model(x) + w * self.constant
+        return w * self.model(x) + (1 - w) * self.constant
