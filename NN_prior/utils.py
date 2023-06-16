@@ -162,8 +162,8 @@ class NegativeTransverseBeamSize(Objective):
         if isinstance(self.model, LUMEModule):
             idx_sigma_x = self.model.output_order.index("sigma_x")
             idx_sigma_y = self.model.output_order.index("sigma_y")
-            sigma_x = self.model(x)[idx_sigma_x, :]
-            sigma_y = self.model(x)[idx_sigma_y, :]
+            sigma_x = self.model(x)[..., idx_sigma_x]
+            sigma_y = self.model(x)[..., idx_sigma_y]
         else:
             sigma_x, sigma_y = self.model(x)[..., 0], self.model(x)[..., 1]
         return self.function(sigma_x, sigma_y)

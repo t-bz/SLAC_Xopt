@@ -4,7 +4,7 @@ import torch
 from gpytorch.means import ConstantMean
 from lume_model.torch import LUMEModule
 
-from custom_mean import CustomMean
+from custom_mean import CustomMean, TrainableFlatten
 from utils import NegativeTransverseBeamSize
 from utils import load_surrogate, load_corr_model, create_vocs
 from dynamic_custom_mean import Flatten, OccasionalConstant, OccasionalModel
@@ -13,8 +13,8 @@ from bo_agent import BOAgent
 
 
 # define prior mean
-mean_class = CorrelatedFlatten
-mean_kwargs = {"metrics": {}, "w_offset": 0.1}
+mean_class = CustomMean
+mean_kwargs = {}
 
 # select correlated model
 n_epoch = int(sys.argv[1])
@@ -56,15 +56,9 @@ surrogate = load_surrogate(
     "torch_model.pt",
     device=device,
 )
-surrogate._model.eval()
-surrogate._model.requires_grad_(False)
-
 objective_name = "negative_sigma_xy"
 vocs = create_vocs(surrogate, objective_name)
-
-surrogate_module = LUMEModule(surrogate, vocs.variable_names,
-                              ["sigma_x", "sigma_y"])
-
+surrogate_module = LUMEModule(surrogate, vocs.variable_names, ["sigma_x", "sigma_y"])
 Objective = NegativeTransverseBeamSize
 ground_truth = Objective(surrogate_module)
 
@@ -87,9 +81,6 @@ if issubclass(mean_class, CustomMean):
         "corr_models/{:d}ep.pt".format(n_epoch),
         device=device,
     )
-    corr_model._model.eval()
-    corr_model._model.requires_grad_(False)
-
     corr_module = LUMEModule(corr_model, vocs.variable_names,
                              ["sigma_x", "sigma_y"])
     mean_kwargs["model"] = Objective(corr_module)
