@@ -22,6 +22,8 @@ def load_surrogate(variable_file: str, normalizations_file: str,
         model_file: Path to the torch-file defining the NN model.
 
     Keyword Args:
+        fixed_model (bool): Whether the model shall be put in evaluation mode
+          and gradients be deactivated. Defaults to True.
         device (Union[torch.device, str]): Device on which the model will be
           evaluated. Defaults to "cpu".
 
@@ -51,6 +53,7 @@ def load_surrogate(variable_file: str, normalizations_file: str,
         input_variables, output_variables,
         input_transformers=[transformers[0]],
         output_transformers=[transformers[1]],
+        fixed_model=kwargs.get("fixed_model", True),
         device=device,
     )
     return surrogate
@@ -71,6 +74,8 @@ def load_corr_model(variable_file: str, x_transformer_file: str,
         model_file: Path to the torch-file defining the NN model.
 
     Keyword Args:
+        fixed_model (bool): Whether the model shall be put in evaluation mode
+          and gradients be deactivated. Defaults to True.
         device (Union[torch.device, str]): Device on which the model will be
           evaluated. Defaults to "cpu".
 
@@ -93,6 +98,7 @@ def load_corr_model(variable_file: str, x_transformer_file: str,
         input_variables, output_variables,
         input_transformers=[x_transformer],
         output_transformers=[y_transformer],
+        fixed_model=kwargs.get("fixed_model", True),
         device=device,
     )
     return corr_model
