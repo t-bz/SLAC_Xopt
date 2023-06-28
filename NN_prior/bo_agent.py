@@ -1,26 +1,24 @@
 import os
 import time
+from typing import Optional, Callable, Type
+
 import torch
 import pandas as pd
-from typing import Optional, Callable, Type
+from gpytorch.means.mean import Mean
+from gpytorch.means import ConstantMean
+
 from xopt import Xopt
 from xopt.vocs import VOCS
 from xopt.evaluator import Evaluator
-from xopt.generators import UpperConfidenceBoundGenerator, \
-    ExpectedImprovementGenerator
-from xopt.generators.bayesian.options import ModelOptions, OptimOptions
-from xopt.generators.bayesian.expected_improvement import BayesianOptions
-from xopt.generators.bayesian.upper_confidence_bound import UCBOptions
-from gpytorch.means.mean import Mean
-from gpytorch.means import ConstantMean
+from xopt.numerical_optimizer import LBFGSOptimizer
+from xopt.generators import ExpectedImprovementGenerator, UpperConfidenceBoundGenerator
+from xopt.generators.bayesian.models.standard import StandardModelConstructor
 
 import custom_mean
 import dynamic_custom_mean
 import metric_informed_custom_mean
-from dynamic_custom_mean import DynamicCustomMean, Flatten, OccasionalModel, \
-    OccasionalConstant
-from metric_informed_custom_mean import MetricInformedCustomMean, \
-    CorrelationThreshold, CorrelatedFlatten
+from dynamic_custom_mean import DynamicCustomMean, Flatten, OccasionalModel, OccasionalConstant
+from metric_informed_custom_mean import MetricInformedCustomMean, CorrelationThreshold, CorrelatedFlatten
 from utils import calc_mae, calc_corr, print_runtime
 
 
@@ -53,9 +51,7 @@ class BOAgent:
         self.objective_name = bo_config.get(
             "objective_name", "negative_sigma_xy")
         if not self.objective_name == "negative_sigma_xy":
-            raise ValueError(
-                f"objective_name {self.objective_name} is not supported"
-            )
+            raise ValueError(f"objective_name {self.objective_name} is not supported")
         self.path = bo_config.get("path", './BO/')
         self.use_cuda = bo_config.get("use_cuda", False)
         self.num_restarts = bo_config.get("num_restarts", 5)
@@ -71,8 +67,7 @@ class BOAgent:
                    "corr_posterior", "mae_samples", "corr_samples"]
         self.metrics = {}
         for metric in metrics:
-            self.metrics[metric] = torch.full(
-                (self.n_run, self.n_step), torch.nan)
+            self.metrics[metric] = torch.full((self.n_run, self.n_step), torch.nan)
 
     @property
     def _tkwargs(self):
@@ -86,10 +81,8 @@ class BOAgent:
         if os.path.isfile(file):
             data_set = pd.read_csv(file)
         else:
-            inputs = [self.vocs.random_inputs() for _ in
-                      range(n_samples)]  # seed=0
-            outputs = [evaluate(input_dict)[self.objective_name] for input_dict
-                       in inputs]
+            inputs = [self.vocs.random_inputs() for _ in range(n_samples)]  # seed=0
+            outputs = [evaluate(input_dict)[self.objective_name] for input_dict in inputs]
             data_set = pd.DataFrame(inputs)
             data_set[self.objective_name] = outputs
             data_set.to_csv(file)
@@ -106,17 +99,11 @@ class BOAgent:
     def _calculate_metrics(self, mean, model, run_data) -> dict:
         x_test_variables = torch.tensor(
             self._data_test[self.vocs.variable_names].values, **self._tkwargs)
-        y_test = torch.tensor(
-            self._data_test[self.vocs.objective_names].values,
-            **self._tkwargs).squeeze()
+        y_test = torch.tensor(self._data_test[self.vocs.objective_names].values, **self._tkwargs).squeeze()
         y_test_prior = mean(x_test_variables).squeeze()
-        y_test_posterior = model.posterior(
-            x_test_variables.unsqueeze(1)).mean.detach().squeeze()
-        x_samples_variables = torch.tensor(
-            run_data[self.vocs.variable_names].values, **self._tkwargs)
-        y_samples = torch.tensor(
-            run_data[self.vocs.objective_names].values,
-            **self._tkwargs).squeeze()
+        y_test_posterior = model.posterior(x_test_variables.unsqueeze(1)).mean.detach().squeeze()
+        x_samples_variables = torch.tensor(run_data[self.vocs.variable_names].values, **self._tkwargs)
+        y_samples = torch.tensor(run_data[self.vocs.objective_names].values, **self._tkwargs).squeeze()
         y_samples_prior = mean(x_samples_variables).squeeze()
         metrics = {}
         for metric in self.metrics.keys():
@@ -152,19 +139,15 @@ class BOAgent:
                 if name.startswith("raw_"):
                     name = name[4:]
                 if name not in self.mean_params:
-                    self.mean_params[name] = torch.full(
-                        (self.n_run, self.n_step), torch.nan)
-                self.mean_params[name][i_run, i_step] = getattr(
-                    mean, name).detach()
+                    self.mean_params[name] = torch.full((self.n_run, self.n_step), torch.nan)
+                self.mean_params[name][i_run, i_step] = getattr(mean, name).detach()
 
     def _store_mean_variables(self, mean, i_run, i_step):
         mean_variables = _lookup_mean_variables(self.mean.__class__)
         for name in mean_variables:
             if name not in self.mean_variables:
-                self.mean_variables[name] = torch.full(
-                    (self.n_run, self.n_step), torch.nan)
-            self.mean_variables[name][i_run, i_step] = getattr(
-                mean, name)
+                self.mean_variables[name] = torch.full((self.n_run, self.n_step), torch.nan)
+            self.mean_variables[name][i_run, i_step] = getattr(mean, name)
 
     def run(self, evaluate: Callable):
         # create initial and test data sets
@@ -173,12 +156,10 @@ class BOAgent:
         if self._data_test is None:
             self.get_test_data(evaluate)
         # prepare data storage
-        self.data["x_names"] = \
-            self.vocs.variable_names + self.vocs.constant_names
+        self.data["x_names"] = self.vocs.variable_names + self.vocs.constant_names
         self.data["y_names"] = self.vocs.objective_names
         for key in ["x", "y"]:
-            size = (self.n_run, self.n_init + self.n_step + self.n_opt,
-                    len(self.data[f"{key}_names"]))
+            size = (self.n_run, self.n_init + self.n_step + self.n_opt, len(self.data[f"{key}_names"]))
             self.data[key] = torch.full(size=size, fill_value=torch.nan)
         # run BO
         t0 = time.time()
@@ -186,55 +167,45 @@ class BOAgent:
             # define prior mean
             mean_class = self.mean.__class__
             if issubclass(mean_class, DynamicCustomMean):
-                mean = mean_class(self.mean.model, step=0,
-                                  **self.mean.config)
+                mean = mean_class(self.mean.model, step=0, **self.mean.config)
             elif issubclass(mean_class, MetricInformedCustomMean):
-                mean = mean_class(self.mean.model, metrics={},
-                                  **self.mean.config)
+                mean = mean_class(self.mean.model, metrics={}, **self.mean.config)
             else:
                 mean = self.mean
             # Xopt definitions
-            model_options = ModelOptions(
-                name="trainable_mean_standard",
+            model_constructor = StandardModelConstructor(
                 mean_modules={self.objective_name: mean},
+                trainable_mean_keys=[self.objective_name],
             )
-            optim_options = OptimOptions(num_restarts=self.num_restarts,
-                                         raw_samples=self.raw_samples)
-            if self.acq_name == "EI":
-                generator_options = BayesianOptions(
-                    model=model_options, optim=optim_options,
-                    use_cuda=self.use_cuda)
-                generator = ExpectedImprovementGenerator(
-                    self.vocs, options=generator_options)
-            else:
-                generator_options = UCBOptions(
-                    model=model_options, optim=optim_options,
-                    use_cuda=self.use_cuda)
-                generator = UpperConfidenceBoundGenerator(
-                    self.vocs, options=generator_options)
+            numerical_optimizer = LBFGSOptimizer(n_restarts=5, n_raw_samples=20)
+            generator_lookup = {"EI": ExpectedImprovementGenerator, "UCB": UpperConfidenceBoundGenerator}
+            generator = generator_lookup[self.acq_name](
+                vocs=self.vocs,
+                model_constructor=model_constructor,
+                numerical_optimizer=numerical_optimizer,
+                use_cuda=self.use_cuda,
+            )
             evaluator = Evaluator(function=evaluate)
-            X = Xopt(generator=generator, evaluator=evaluator,
-                     vocs=self.vocs, data=self._data_init.copy(deep=True))
+            X = Xopt(
+                generator=generator,
+                evaluator=evaluator,
+                vocs=self.vocs,
+                data=self._data_init.copy(deep=True),
+            )
             # optimization loop
             for i_step in range(self.n_step):
                 # define prior mean
                 if issubclass(mean_class, DynamicCustomMean):
-                    mean = mean_class(self.mean.model, step=i_step,
-                                      **self.mean.config)
+                    mean = mean_class(self.mean.model, step=i_step, **self.mean.config)
                 elif issubclass(mean_class, MetricInformedCustomMean):
                     if i_step == 0:
                         correlation = 1.0
                     else:
-                        correlation = self.metrics[
-                            "corr_samples"][i_run, i_step - 1]
-                    mean = mean_class(
-                        self.mean.model, metrics={"correlation": correlation},
-                        **self.mean.config
-                    )
+                        correlation = self.metrics["corr_samples"][i_run, i_step - 1]
+                    mean = mean_class(self.mean.model, metrics={"correlation": correlation}, **self.mean.config)
                 else:
                     mean = self.mean
-                X.generator.options.model.mean_modules[
-                    self.objective_name] = mean
+                X.generator.model_constructor.mean_modules[self.objective_name] = mean
                 # optimization step
                 X.step()
                 # store parameters
@@ -243,22 +214,19 @@ class BOAgent:
                 self._store_mean_variables(mean, i_run, i_step)
                 # store metrics
                 with torch.no_grad():
-                    metrics = self._calculate_metrics(mean, X.generator.model,
-                                                      X.data)
+                    metrics = self._calculate_metrics(mean, X.generator.model, X.data)
                 for metric in self.metrics.keys():
                     self.metrics[metric][i_run, i_step] = metrics[metric]
             # get optimum
             run_data = X.data.copy(deep=True)
             if self.get_optimum:
                 x_opt = X.generator.get_optimum()
-                y_opt = pd.DataFrame(evaluate(x_opt.to_dict("index")[0]),
-                                     index=[0])
+                y_opt = pd.DataFrame(evaluate(x_opt.to_dict("index")[0]), index=[0])
                 data_opt = pd.concat([x_opt, y_opt], axis=1)
                 run_data = pd.concat([run_data, data_opt], axis=0)
             # store data
             self.data["x"][i_run] = torch.tensor(
-                run_data[self.vocs.variable_names +
-                         self.vocs.constant_names].values
+                run_data[self.vocs.variable_names + self.vocs.constant_names].values
             )
             self.data["y"][i_run] = torch.tensor(
                 run_data[self.vocs.objective_names].values)

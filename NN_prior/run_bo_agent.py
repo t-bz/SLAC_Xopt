@@ -1,15 +1,17 @@
 import os
 import sys
+
 import torch
 from gpytorch.means import ConstantMean
+
 from lume_model.torch import LUMEModule
 
-from custom_mean import CustomMean, TrainableFlatten
+from bo_agent import BOAgent
 from utils import NegativeTransverseBeamSize
 from utils import load_surrogate, load_corr_model, create_vocs
+from custom_mean import CustomMean, TrainableFlatten
 from dynamic_custom_mean import Flatten, OccasionalConstant, OccasionalModel
 from metric_informed_custom_mean import CorrelationThreshold, CorrelatedFlatten
-from bo_agent import BOAgent
 
 
 # define prior mean
