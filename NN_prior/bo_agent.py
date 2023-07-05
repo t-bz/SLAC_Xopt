@@ -167,7 +167,7 @@ class BOAgent:
             # define prior mean
             mean_class = self.mean.__class__
             if issubclass(mean_class, DynamicCustomMean):
-                mean = mean_class(self.mean.model, step=0, **self.mean.config)
+                mean = mean_class(self.mean.model, step=0, **self.mean.config).to(**self._tkwargs)
             elif issubclass(mean_class, MetricInformedCustomMean):
                 mean = mean_class(self.mean.model, metrics={}, **self.mean.config)
             else:
@@ -196,7 +196,7 @@ class BOAgent:
             for i_step in range(self.n_step):
                 # define prior mean
                 if issubclass(mean_class, DynamicCustomMean):
-                    mean = mean_class(self.mean.model, step=i_step, **self.mean.config)
+                    mean = mean_class(self.mean.model, step=i_step, **self.mean.config).to(**self._tkwargs)
                 elif issubclass(mean_class, MetricInformedCustomMean):
                     if i_step == 0:
                         correlation = 1.0
