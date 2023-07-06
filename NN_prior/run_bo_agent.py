@@ -1,5 +1,7 @@
 import os
 import sys
+import warnings
+warnings.filterwarnings("ignore")
 
 import torch
 from gpytorch.means import ConstantMean
