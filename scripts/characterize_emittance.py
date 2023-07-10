@@ -4,7 +4,7 @@ import torch
 from emitopt.utils import get_valid_emit_samples_from_quad_scan
 from xopt import VOCS, Xopt, Evaluator
 from xopt.generators import BayesianExplorationGenerator
-
+from xopt.numerical_optimizer import GridOptimizer
 
 def characterize_emittance(
         vocs: VOCS,
@@ -17,7 +17,8 @@ def characterize_emittance(
         n_iterations: int = 10,
         n_initial: int = 5,
         generator_kwargs: Dict = None,
-        quad_scan_analysis_kwargs: Dict = None
+        quad_scan_analysis_kwargs: Dict = None,
+        dump_location = None
 ):
     """
     Script to evaluate beam emittance using an automated quadrupole scan.
@@ -89,7 +90,7 @@ def characterize_emittance(
 
     # check for proper vocs object
     assert quad_strength_key in vocs.variable_names
-    assert (rms_x_key in vocs.objective_names) or (rms_y_key in vocs.objective_names)
+    assert (rms_x_key in vocs.observables) and (rms_y_key in vocs.observables)
 
     # set up kwarg objects
     generator_kwargs = generator_kwargs or {}
@@ -97,7 +98,9 @@ def characterize_emittance(
 
     # set up Xopt object
     generator = BayesianExplorationGenerator(
-        vocs=vocs, **generator_kwargs
+        vocs=vocs,
+        numerical_optimizer=GridOptimizer(n_grid_points=100),
+        **generator_kwargs
     )
     beamsize_evaluator = Evaluator(function=beamsize_evaluator)
     X = Xopt(generator=generator, evaluator=beamsize_evaluator, vocs=vocs)
