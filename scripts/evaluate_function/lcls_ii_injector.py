@@ -9,6 +9,7 @@ def measure_beamsize(inputs):
     roi = inputs["roi"]
     screen = inputs["screen"]
     threshold = inputs["threshold"]
+    camera = inputs["camera"]
 
     # set PVs
     for k, v in inputs.items():
@@ -26,6 +27,14 @@ def measure_beamsize(inputs):
     img = img.reshape(nx, ny)
 
     results = get_beam_data(img, roi, threshold)
+
+    # get the camera resolution in meters/pixel
+    resolution = caget(f"{camera}:RESOLUTION") * 1e-6
+
+    # convert beam size results to meters
+    results['Sx'] = results['Sx'] * resolution
+    results['Sy'] = results['Sy'] * resolution
+
     current_time = time.time()
     results["time"] = current_time
 
