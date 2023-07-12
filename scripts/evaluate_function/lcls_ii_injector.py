@@ -1,4 +1,5 @@
 import time
+import numpy as np
 
 from epics import caget, caput, caget_many
 from scripts.utils.image_processing import get_beam_data
@@ -9,6 +10,7 @@ def measure_beamsize(inputs):
     roi = inputs["roi"]
     screen = inputs["screen"]
     threshold = inputs["threshold"]
+    background_image = np.load(inputs["background"])
 
     # set PVs
     for k, v in inputs.items():
@@ -23,7 +25,11 @@ def measure_beamsize(inputs):
         f"{screen}:image1:ArraySize1_RBV",
         f"{screen}:image1:ArraySize0_RBV"
     ])
+
+    # reshape image and subtract background image (set negative values to zero
     img = img.reshape(nx, ny)
+    img = img - background_image
+    img = np.where(img >= 0, img, 0)
 
     results = get_beam_data(img, roi, threshold)
     current_time = time.time()
