@@ -6,9 +6,9 @@ import matplotlib.patches as patches
 
 def get_beam_data(
         img: np.ndarray,
-        roi_data: np.ndarray,
-        threshold: float,
-        min_log_intensity: float = 5.5,
+        roi_data: np.ndarray = None,
+        threshold: float = None,
+        min_log_intensity: float = None,
         visualize: bool = True
 ):
     """
@@ -38,12 +38,12 @@ def get_beam_data(
         ----------
         img : np.ndarray
             n x m image data
-        roi_data : np.ndarray
+        roi_data : np.ndarray, optional
             list containing roi bounding box elements [x, y, width, height]
-        threshold: int
+        threshold: float, optional
             value to subtract from raw image, negative values after subtraction are
             set to zero
-        min_log_intensity: float, default: 5.5
+        min_log_intensity: float, optional
             minimum log intensity that sets results to Nans
         visualize: bool, default: False
             flag to plot image and bounding box after processing
@@ -53,17 +53,23 @@ def get_beam_data(
         results : dict
             results dict
         """
+
+    threshold = threshold or 0.0
+    min_log_intensity = min_log_intensity or 0.0
+
     x_size, y_size = img.shape
-    if (roi_data[0] + roi_data[2]) > x_size or (roi_data[1] + roi_data[3]) > y_size:
-        raise ValueError(f"must specify ROI that is smaller than the image, "
-                         f"image size is {img.shape}")
 
-    cropped_image = img[
-                    roi_data[0]:roi_data[0] + roi_data[2],
-                    roi_data[1]:roi_data[1] + roi_data[3]
-                    ]
+    if roi_data is not None:
+        if (roi_data[0] + roi_data[2]) > x_size or (roi_data[1] + roi_data[3]) > y_size:
+            raise ValueError(f"must specify ROI that is smaller than the image, "
+                             f"image size is {img.shape}")
 
-    filtered_image = gaussian_filter(cropped_image, 3.0)
+        img = img[
+                        roi_data[0]:roi_data[0] + roi_data[2],
+                        roi_data[1]:roi_data[1] + roi_data[3]
+                        ]
+
+    filtered_image = gaussian_filter(img, 3.0)
 
     thresholded_image = np.where(
         filtered_image - threshold > 0, filtered_image - threshold, 0
@@ -130,10 +136,13 @@ def get_beam_data(
         "log10_total_intensity": log10_total_intensity
     }
 
+    # set results to none if the beam extends beyond the roi or if the intensity is
+    # not greater than a minimum
     if bb_penalty > 0 or log10_total_intensity < min_log_intensity:
         for name in ["Cx", "Cy", "Sx", "Sy"]:
             results[name] = None
 
+    # set bb penalty to None if there is no beam
     if log10_total_intensity < min_log_intensity:
         results["bb_penalty"] = None
 
