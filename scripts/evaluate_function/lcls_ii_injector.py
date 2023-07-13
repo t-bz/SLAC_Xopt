@@ -38,12 +38,12 @@ def measure_background(screen_name, n_measurements:int = 20, filename:str = None
 
 
 def measure_beamsize(inputs):
-    roi = inputs["roi"]
-    screen = inputs["screen"]
-    threshold = inputs["threshold"]
+    roi = inputs.pop("roi")
+    screen = inputs.pop("screen")
+    threshold = inputs.pop("threshold")
 
     if inputs["background"] is not None:
-        background_image = np.load(inputs["background"])
+        background_image = np.load(inputs.pop("background"))
     else:
         background_image = None
 
