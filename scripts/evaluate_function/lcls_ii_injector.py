@@ -10,7 +10,11 @@ def measure_beamsize(inputs):
     roi = inputs["roi"]
     screen = inputs["screen"]
     threshold = inputs["threshold"]
-    background_image = np.load(inputs["background"])
+
+    if inputs["background"] is not None:
+        background_image = np.load(inputs["background"])
+    else:
+        background_image = None
 
     # set PVs
     for k, v in inputs.items():
@@ -26,10 +30,11 @@ def measure_beamsize(inputs):
         f"{screen}:image1:ArraySize0_RBV"
     ])
 
-    # reshape image and subtract background image (set negative values to zero
-    img = img.reshape(nx, ny)
-    img = img - background_image
-    img = np.where(img >= 0, img, 0)
+    # reshape image and subtract background image (set negative values to zero)
+    if background_image is not None:
+        img = img.reshape(nx, ny)
+        img = img - background_image
+        img = np.where(img >= 0, img, 0)
 
     results = get_beam_data(img, roi, threshold)
     current_time = time.time()
