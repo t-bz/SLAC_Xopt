@@ -6,6 +6,37 @@ from scripts.utils.image_processing import get_beam_data
 from time import sleep
 
 
+def get_raw_image(screen_name):
+    # get image data
+    img, nx, ny = caget_many([
+        f"{screen_name}:Image:ArrayData",
+        f"{screen_name}:Image:ArraySize1_RBV",
+        f"{screen_name}:Image:ArraySize0_RBV"
+    ])
+    img = img.reshape(nx, ny)
+
+    return img
+
+
+def measure_background(screen_name, n_measurements:int = 20, filename:str = None,):
+    filename = filename or f"{screen_name}_background"
+    filename += ".npy"
+
+    images = []
+    for i in range(n_measurements):
+        images += [get_raw_image(screen_name)]
+        sleep(0.1)
+
+    # return average
+    images = np.stack(images)
+    mean = images.mean(axis=0)
+
+    # save average
+    np.save(filename, mean)
+
+    return mean
+
+
 def measure_beamsize(inputs):
     roi = inputs["roi"]
     screen = inputs["screen"]
@@ -23,16 +54,10 @@ def measure_beamsize(inputs):
 
     sleep(1.0)
 
-    # get image data
-    img, nx, ny = caget_many([
-        f"{screen}:image1:ArrayData",
-        f"{screen}:image1:ArraySize1_RBV",
-        f"{screen}:image1:ArraySize0_RBV"
-    ])
+    img = get_raw_image(screen)
 
     # reshape image and subtract background image (set negative values to zero)
     if background_image is not None:
-        img = img.reshape(nx, ny)
         img = img - background_image
         img = np.where(img >= 0, img, 0)
 
