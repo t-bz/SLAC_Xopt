@@ -62,6 +62,14 @@ def measure_beamsize(inputs):
         img = np.where(img >= 0, img, 0)
 
     results = get_beam_data(img, roi, threshold)
+
+    # get the camera resolution in meters/pixel
+    resolution = caget(f"{camera}:RESOLUTION") * 1e-6
+
+    # convert beam size results to meters
+    results['Sx'] = results['Sx'] * resolution
+    results['Sy'] = results['Sy'] * resolution
+
     current_time = time.time()
     results["time"] = current_time
 
