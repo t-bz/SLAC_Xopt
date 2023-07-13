@@ -41,7 +41,6 @@ def measure_beamsize(inputs):
     roi = inputs["roi"]
     screen = inputs["screen"]
     threshold = inputs["threshold"]
-    camera = inputs["camera"]
 
     if inputs["background"] is not None:
         background_image = np.load(inputs["background"])
