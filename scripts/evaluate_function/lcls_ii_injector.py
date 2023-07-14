@@ -2,36 +2,46 @@ import time
 import numpy as np
 import pandas as pd
 
-from epics import caget, caput, caget_many
 from scripts.utils.image_processing import get_beam_data
 from time import sleep
+
+TESTING = True
+
+if not TESTING:
+    from epics import caput, caget_many
 
 
 def get_raw_image(screen_name):
     # get image data
-    img, nx, ny, resolution = caget_many([
-        f"{screen_name}:Image:ArrayData",
-        f"{screen_name}:Image:ArraySize1_RBV",
-        f"{screen_name}:Image:ArraySize0_RBV",
-        f"{screen_name}:RESOLUTION"
-    ])
-    img = img.reshape(nx, ny)
+    if TESTING:
+        img = np.load("../../../tests/test_img.npy")
+        resolution = 1.0
+    else:
+        img, nx, ny, resolution = caget_many([
+            f"{screen_name}:Image:ArrayData",
+            f"{screen_name}:Image:ArraySize1_RBV",
+            f"{screen_name}:Image:ArraySize0_RBV",
+            f"{screen_name}:RESOLUTION"
+        ])
+        img = img.reshape(nx, ny)
 
     return img, resolution
 
 
-def measure_background(screen_name, n_measurements:int = 20, filename:str = None,):
-    filename = filename or f"{screen_name}_background"
-    filename += ".npy"
+def measure_background(screen_name, n_measurements: int = 20, filename: str = None,):
+    filename = filename or f"{screen_name}_background".replace(":","_")
 
     images = []
     for i in range(n_measurements):
-        images += [get_raw_image(screen_name)]
+        images += [get_raw_image(screen_name)[0]]
         sleep(0.1)
 
     # return average
     images = np.stack(images)
     mean = images.mean(axis=0)
+
+    if TESTING:
+        mean = np.zeros_like(mean)
 
     # save average
     np.save(filename, mean)
@@ -44,6 +54,7 @@ def measure_beamsize(inputs):
     screen = inputs.pop("screen")
     threshold = inputs.pop("threshold")
     n_shots = inputs.pop("n_shots", 1)
+    visualize = inputs.pop("visualize", False)
 
     if inputs["background"] is not None:
         background_image = np.load(inputs.pop("background"))
@@ -51,9 +62,10 @@ def measure_beamsize(inputs):
         background_image = None
 
     # set PVs
-    for k, v in inputs.items():
-        print(f'CAPUT {k} {v}')
-        caput(k, v)
+    if not TESTING:
+        for k, v in inputs.items():
+            print(f'CAPUT {k} {v}')
+            caput(k, v)
 
     sleep(1.0)
 
@@ -66,18 +78,26 @@ def measure_beamsize(inputs):
             img = img - background_image
             img = np.where(img >= 0, img, 0)
 
-        results = get_beam_data(img, roi, threshold)
+        results = get_beam_data(img, roi, threshold, visualize=visualize)
 
         # convert beam size results to meters
-        results['Sx'] = results['Sx'] * resolution
-        results['Sy'] = results['Sy'] * resolution
+        if results["Sx"] is not None:
+            results['Sx'] = results['Sx'] * resolution
+            results['Sy'] = results['Sy'] * resolution
 
         current_time = time.time()
         results["time"] = current_time
 
         data += [results]
 
-    outputs = pd.DataFrame(data)
+    if n_shots == 1:
+        outputs = data[0]
+    else:
+        # collect results into lists
+        outputs = pd.DataFrame(data).reset_index().to_dict(orient='list')
 
-    return outputs.to_dict()
+        # create numpy arrays from lists
+        outputs = {key: np.array(ele) for key, ele in outputs.items()}
+
+    return outputs
 

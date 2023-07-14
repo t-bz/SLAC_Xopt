@@ -65,9 +65,11 @@ def get_beam_data(
                              f"image size is {img.shape}")
 
         img = img[
-                        roi_data[0]:roi_data[0] + roi_data[2],
-                        roi_data[1]:roi_data[1] + roi_data[3]
-                        ]
+              roi_data[0]:roi_data[0] + roi_data[2],
+              roi_data[1]:roi_data[1] + roi_data[3]
+              ]
+    else:
+        roi_data = [0, 0, x_size, y_size]
 
     filtered_image = gaussian_filter(img, 3.0)
 
@@ -80,8 +82,8 @@ def get_beam_data(
     roi_radius = np.min((roi_c * 2, np.array(thresholded_image.shape))) / 2
 
     # set intensity outside circular ROI to zero
-    xidx = np.arange(cropped_image.shape[0])
-    yidx = np.arange(cropped_image.shape[1])
+    xidx = np.arange(img.shape[0])
+    yidx = np.arange(img.shape[1])
     mesh = np.meshgrid(xidx, yidx)
     outside_roi = np.sqrt(
         (mesh[0] - roi_c[0]) ** 2 + (mesh[1] - roi_c[1]) ** 2
@@ -117,7 +119,8 @@ def get_beam_data(
                                  edgecolor="r")
         ax.add_patch(rect)
 
-        circle = patches.Circle(roi_c[::-1], roi_radius, facecolor="none", edgecolor="r")
+        circle = patches.Circle(roi_c[::-1], roi_radius, facecolor="none",
+                                edgecolor="r")
         ax.add_patch(circle)
 
     distances = np.linalg.norm(pts - roi_c, axis=1)
@@ -140,11 +143,11 @@ def get_beam_data(
     # not greater than a minimum
     if bb_penalty > 0 or log10_total_intensity < min_log_intensity:
         for name in ["Cx", "Cy", "Sx", "Sy"]:
-            results[name] = None
+            results[name] = np.NaN
 
     # set bb penalty to None if there is no beam
     if log10_total_intensity < min_log_intensity:
-        results["bb_penalty"] = None
+        results["bb_penalty"] = np.NaN
 
     return results
 
