@@ -4,6 +4,7 @@ import torch
 from emitopt.utils import get_valid_emit_samples_from_quad_scan
 from xopt import VOCS, Xopt, Evaluator
 from xopt.generators import BayesianExplorationGenerator
+from xopt.numerical_optimizer import GridOptimizer
 
 
 def characterize_emittance(
@@ -11,13 +12,15 @@ def characterize_emittance(
         beamsize_evaluator: Callable,
         quad_length: float,
         drift_length: float,
-        quad_strength_key,
-        rms_x_key,
-        rms_y_key,
+        quad_strength_key: str,
+        rms_x_key: str,
+        rms_y_key: str,
+        quad_strength_scale_factor: float = 1.0,
         n_iterations: int = 10,
         n_initial: int = 5,
         generator_kwargs: Dict = None,
-        quad_scan_analysis_kwargs: Dict = None
+        quad_scan_analysis_kwargs: Dict = None,
+        dump_file: str = None
 ):
     """
     Script to evaluate beam emittance using an automated quadrupole scan.
@@ -27,7 +30,8 @@ def characterize_emittance(
         - It should accept a dictionary containing the quadrupole strength parameter
         identified by `quad_strength_key` and return a dictionary containing the keys
         `rms_x_key` and 'rms_y_key'.
-        - Quadrupole strengths should be in units of [m^{-2}], positive values denote
+        - Quadrupole strengths should be in units of [m^{-2}] (or should be scaled by
+        `quadrupole_strength_scale_factor` to [m^{-2}]) with positive values denote
         focusing in the horizontal plane
         - RMS values returned should be in units of [mm]
 
@@ -52,6 +56,10 @@ def characterize_emittance(
     quad_strength_key : str
         Dictionary key used to specify the geometric quadrupole strength.
 
+    quad_strength_scale_factor : float, optional
+        Scale factor that scales quadrupole strength parameters given by
+        `quad_strength_key` to [m^{-2}]
+
     rms_x_key : str
         Dictionary key used to specify the measurement of horizontal beam size.
 
@@ -71,6 +79,9 @@ def characterize_emittance(
     quad_scan_analysis_kwargs : dict, optional
         Dictionary used to customize quadrupole scan analysis / emittance calculation.
 
+    dump_file : str, optional
+        Filename to specify dump file for Xopt object.
+
     Returns
     -------
     result : dict
@@ -89,7 +100,7 @@ def characterize_emittance(
 
     # check for proper vocs object
     assert quad_strength_key in vocs.variable_names
-    assert (rms_x_key in vocs.objective_names) or (rms_y_key in vocs.objective_names)
+    assert (rms_x_key in vocs.observables) and (rms_y_key in vocs.observables)
 
     # set up kwarg objects
     generator_kwargs = generator_kwargs or {}
@@ -97,10 +108,13 @@ def characterize_emittance(
 
     # set up Xopt object
     generator = BayesianExplorationGenerator(
-        vocs=vocs, **generator_kwargs
+        vocs=vocs,
+        numerical_optimizer=GridOptimizer(n_grid_points=100),
+        **generator_kwargs
     )
     beamsize_evaluator = Evaluator(function=beamsize_evaluator)
     X = Xopt(generator=generator, evaluator=beamsize_evaluator, vocs=vocs)
+    X.options.dump_file = dump_file
 
     # evaluate random samples
     X.random_evaluate(n_initial)
@@ -113,8 +127,8 @@ def characterize_emittance(
     for i in range(n_iterations):
         X.step()
 
-    # get data from xopt object
-    k = X.data[quad_strength_key].to_numpy()
+    # get data from xopt object and scale to [m^{-2}]
+    k = X.data[quad_strength_key].to_numpy() * quad_strength_scale_factor
     rms_x = X.data[rms_x_key].to_numpy()
     rms_y = X.data[rms_y_key].to_numpy()
 
