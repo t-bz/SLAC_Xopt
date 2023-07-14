@@ -54,6 +54,7 @@ def measure_beamsize(inputs):
     screen = inputs.pop("screen")
     threshold = inputs.pop("threshold")
     n_shots = inputs.pop("n_shots", 1)
+    bb_half_width = inputs.pop("bb_half_width", 2.0)
     visualize = inputs.pop("visualize", False)
 
     if inputs["background"] is not None:
@@ -78,7 +79,9 @@ def measure_beamsize(inputs):
             img = img - background_image
             img = np.where(img >= 0, img, 0)
 
-        results = get_beam_data(img, roi, threshold, visualize=visualize)
+        results = get_beam_data(
+            img, roi, threshold, bb_half_width=bb_half_width, visualize=visualize
+        )
 
         # convert beam size results to meters
         if results["Sx"] is not None:

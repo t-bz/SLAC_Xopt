@@ -8,6 +8,7 @@ def get_beam_data(
         img: np.ndarray,
         roi_data: np.ndarray = None,
         threshold: float = None,
+        bb_half_width: float = 2.0,
         min_log_intensity: float = None,
         visualize: bool = True
 ):
@@ -43,6 +44,8 @@ def get_beam_data(
         threshold: float, optional
             value to subtract from raw image, negative values after subtraction are
             set to zero
+        bb_half_width: float, optional
+            Bounding box half width in terms of standard deviations
         min_log_intensity: float, optional
             minimum log intensity that sets results to Nans
         visualize: bool, default: False
@@ -97,7 +100,7 @@ def get_beam_data(
     s = np.array((sx, sy))
 
     # get beam region
-    n_stds = 2
+    n_stds = bb_half_width
     pts = np.array(
         (
             c - n_stds * s,
