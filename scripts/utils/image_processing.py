@@ -81,7 +81,7 @@ def get_beam_data(
     )
 
     # get circular ROI region
-    roi_c = np.array((roi_data[2], roi_data[3])) / 2
+    roi_c = np.array((roi_data[3], roi_data[2])) / 2
     roi_radius = np.min((roi_c * 2, np.array(thresholded_image.shape))) / 2
 
     # set intensity outside circular ROI to zero
@@ -115,14 +115,14 @@ def get_beam_data(
         fig, ax = plt.subplots()
         c = ax.imshow(thresholded_image, origin="lower")
         ax.plot(cx, cy, "+r")
-        ax.plot(*roi_c[::-1], "+r")
+        ax.plot(*roi_c, "+r")
         fig.colorbar(c)
 
         rect = patches.Rectangle(pts[0], *s * n_stds * 2.0, facecolor='none',
                                  edgecolor="r")
         ax.add_patch(rect)
 
-        circle = patches.Circle(roi_c[::-1], roi_radius, facecolor="none",
+        circle = patches.Circle(roi_c, roi_radius, facecolor="none",
                                 edgecolor="r")
         ax.add_patch(circle)
 
