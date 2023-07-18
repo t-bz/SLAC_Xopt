@@ -14,7 +14,3 @@
 .ipynb_checkpoints
 # Compiled Python files
 *.pyc
-# Large files
-/NN_prior/BO
-/NN_prior/202[0-9]-[0-1][0-9]-[0-3][0-9]_BO
-/NN_prior/corr_models
