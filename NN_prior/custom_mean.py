@@ -1,6 +1,7 @@
 import torch
 from typing import Optional, Union
 from gpytorch.priors import Prior, NormalPrior, GammaPrior
+from gpytorch.means import ConstantMean
 from gpytorch.means.mean import Mean
 from gpytorch.constraints import Interval, Positive
 
@@ -128,7 +129,7 @@ class InputScaleCalibration(CustomMean):
             x_scale_dim (int): Dimension of the x_scale parameter.
               Defaults to 1.
             x_scale_prior (Optional[Prior]): Prior for x_scale parameter.
-              Defaults to a Gamma distribution (concentration=2.0, rate=2.0).
+              Defaults to a Gamma distribution (concentration=1.0, rate=1.0).
             x_scale_constraint (Optional[Interval]): Constraint for x_scale
               parameter. Defaults to Positive().
             x_scale_fixed (Union[float, torch.Tensor]): Provides the option to
@@ -143,15 +144,16 @@ class InputScaleCalibration(CustomMean):
         x_scale_dim = kwargs.get("x_scale_dim", 1)
         self.register_parameter("raw_x_scale",
                                 torch.nn.Parameter(torch.ones(x_scale_dim)))
+        # mean=1.0, std=0.5
         x_scale_prior = kwargs.get(
-            "y_scale_prior",
+            "x_scale_prior",
             GammaPrior(concentration=2.0 * torch.ones((1, x_scale_dim)),
                        rate=2.0 * torch.ones((1, x_scale_dim)))
         )
         if x_scale_prior is not None:
             self.register_prior("x_scale_prior", x_scale_prior,
                                 self._x_scale_param, self._x_scale_closure)
-        x_scale_constraint = kwargs.get("y_scale_constraint", Positive())
+        x_scale_constraint = kwargs.get("x_scale_constraint", Positive())
         if x_scale_constraint is not None:
             self.register_constraint("raw_x_scale", x_scale_constraint)
             # correct initial value
@@ -162,7 +164,7 @@ class InputScaleCalibration(CustomMean):
         x_scale_fixed = kwargs.get("x_scale_fixed", None)
         if x_scale_fixed is not None:
             self.raw_x_scale.data = x_scale_fixed
-            if x_scale_fixed is not None:
+            if x_scale_constraint is not None:
                 raw_x_scale = self.raw_x_scale_constraint.inverse_transform(
                     torch.tensor(x_scale_fixed))
                 self.raw_x_scale.data = raw_x_scale
@@ -331,7 +333,7 @@ class OutputScaleCalibration(CustomMean):
         Keyword Args:
             y_scale_dim: Dimension of the y_scale parameter. Defaults to 1.
             y_scale_prior (Optional[Prior]): Prior for y_scale parameter.
-              Defaults to a Gamma distribution (concentration=2.0, rate=2.0).
+              Defaults to a Gamma distribution (concentration=1.0, rate=1.0).
             y_scale_constraint (Optional[Interval]): Constraint for y_scale
               parameter. Defaults to Positive().
             y_scale_fixed (Union[float, torch.Tensor]): Provides the option to
@@ -346,6 +348,7 @@ class OutputScaleCalibration(CustomMean):
         y_scale_dim = kwargs.get("y_scale_dim", 1)
         self.register_parameter("raw_y_scale",
                                 torch.nn.Parameter(torch.ones(y_scale_dim)))
+        # mean=1.0, std=0.5
         y_scale_prior = kwargs.get(
             "y_scale_prior",
             GammaPrior(concentration=2.0 * torch.ones((1, y_scale_dim)),
@@ -461,3 +464,81 @@ class LinearCalibration(LinearInputCalibration, LinearOutputCalibration):
     def forward(self, x):
         _x = self.linear_input_calibration(x)
         return self.linear_output_calibration(self.model(_x))
+
+
+class TrainableFlatten(CustomMean, ConstantMean):
+    def __init__(
+            self,
+            model: torch.nn.Module,
+            **kwargs
+    ):
+        """Prior mean composed of a weighted sum with a constant prior.
+
+        The output is a weighted sum of the prior mean derived from the given
+        model and a constant prior:
+        y = w * model(x) + (1 - w) * constant_mean.
+
+        Args:
+            model: Inherited from CustomMean.
+
+        Keyword Args:
+            w_init (Union[float, torch.Tensor]): Sets the initial parameter
+              value. Defaults to 0.5.
+            w_prior (Optional[Prior]): Prior for w parameter. Defaults to None.
+            w_constraint (Optional[Interval]): Constraint for w parameter.
+              Defaults to Interval(0.0, 1.0).
+            w_fixed (Union[float, torch.Tensor]): Provides the option to
+              use a fixed parameter value. Defaults to None.
+
+        Attributes:
+            raw_w (torch.nn.Parameter): Unconstrained weighting parameter.
+            w (torch.nn.Parameter): Constrained version of raw_w.
+        """
+        super().__init__(model, **kwargs)
+        w_init = torch.tensor(kwargs.get("w_init", 0.5))
+        self.register_parameter("raw_w", torch.nn.Parameter(w_init))
+        w_prior = kwargs.get("w_prior", None)
+        if w_prior is not None:
+            self.register_prior("w_prior", w_prior,
+                                self._w_param, self._w_closure)
+        w_constraint = kwargs.get("w_constraint", Interval(0.0, 1.0))
+        if w_constraint is not None:
+            self.register_constraint("raw_w", w_constraint)
+            # correct initial value
+            raw_w_init = self.raw_w_constraint.inverse_transform(w_init)
+            self.raw_w.data = raw_w_init
+        # option to use a fixed parameter
+        w_fixed = kwargs.get("w_fixed", None)
+        if w_fixed is not None:
+            self.raw_w.data = w_fixed
+            if w_constraint is not None:
+                raw_w = self.raw_w_constraint.inverse_transform(
+                    torch.tensor(w_fixed))
+                self.raw_w.data = raw_w
+            self.raw_w.requires_grad = False
+
+    @property
+    def w(self):
+        return self._w_param(self)
+
+    @w.setter
+    def w(self, value):
+        self._w_closure(self, value)
+
+    def _w_param(self, m):
+        if hasattr(m, "raw_w_constraint"):
+            return m.raw_w_constraint.transform(m.raw_w)
+        return m.raw_w
+
+    def _w_closure(self, m, value):
+        if not torch.is_tensor(value):
+            value = torch.as_tensor(value).to(m.raw_w)
+        if hasattr(m, "raw_w_constraint"):
+            m.initialize(
+                raw_w=m.raw_w_constraint.inverse_transform(value))
+        else:
+            m.initialize(raw_w=value)
+
+    def forward(self, x):
+        w = self.w
+        return w * self.model(x) + (1 - w) * self.constant
