@@ -94,7 +94,7 @@ class CorrelatedFlatten(MetricInformedCustomMean, ConstantMean):
         super().__init__(model, metrics, **kwargs)
         self.w_lim = kwargs.get("w_lim", (0.0, 1.0))
         self.w_offset = kwargs.get("w_offset", 0.0)
-        self.correlation = metrics.get("correlation", 0.0)
+        self.correlation = metrics.get("correlation", 1.0)
 
     @property
     def w(self):
