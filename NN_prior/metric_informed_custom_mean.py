@@ -34,16 +34,15 @@ class CorrelationThreshold(MetricInformedCustomMean, ConstantMean):
     ):
         """Prior mean reverting to a constant if correlation is below threshold.
 
-        Reverts to a constant prior mean unless the model correlation found in
-        the metrics is above a given threshold.
+        Reverts to a constant prior mean unless the model correlation found in the metrics is above a
+        given threshold.
 
         Args:
             model: Inherited from MetricInformedCustomMean.
             metrics: Inherited from MetricInformedCustomMean.
 
         Keyword Args:
-            threshold (float): Correlation threshold above which the model is
-              used as a prior. Defaults to 0.8.
+            threshold (float): Correlation threshold above which the model is used as a prior. Defaults to 0.8.
 
         Attributes:
             correlation (float): Correlation value extracted from metrics.
@@ -75,20 +74,17 @@ class CorrelatedFlatten(MetricInformedCustomMean, ConstantMean):
     ):
         """Prior mean composed of a weighted sum with a constant prior.
 
-        The output is a weighted sum of the prior mean derived from the given
-        model and a constant prior:
-        y = w * model(x) + (1 - w) * constant_mean,
-        with the weighting parameter w being determined by the given
-        correlation and offset:
-        w = correlation - offset.
+        The output is a weighted sum of the prior mean derived from the given model and a constant prior:
+        y = w * model(x) + (1 - w) * constant_mean, with the weighting parameter w being determined by the given
+        correlation and offset: w = correlation - offset.
 
         Args:
             model: Inherited from MetricInformedCustomMean.
             metrics: Inherited from MetricInformedCustomMean.
 
         Keyword Args:
-            w_lim (Tuple[float, float]): Minimum and maximum value of
-              weighting parameter w. Defaults to (0.0, 1.0).
+            w_lim (Tuple[float, float]): Minimum and maximum value of weighting parameter w.
+              Defaults to (0.0, 1.0).
             w_offset (float): Offset for w parameter. Defaults to 0.0.
 
         Attributes:

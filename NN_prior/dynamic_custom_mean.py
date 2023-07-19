@@ -1,5 +1,6 @@
-import torch
 from typing import Tuple
+
+import torch
 from gpytorch.means import ConstantMean
 
 from custom_mean import CustomMean
@@ -35,22 +36,19 @@ class Flatten(DynamicCustomMean, ConstantMean):
     ):
         """Prior mean composed of a weighted sum with a constant prior.
 
-        The output is a step-dependent, weighted sum of the prior mean
-        derived from the given model and a constant prior:
-        y = w * model(x) + (1 - w) * constant_mean.
-        The weighting parameter w is linearly decreased from its maximum
-        to its minimum value over a fixed sequence of steps.
+        The output is a step-dependent, weighted sum of the prior mean derived from the given model and a
+        constant prior: y = w * model(x) + (1 - w) * constant_mean. The weighting parameter w is linearly
+        decreased from its maximum to its minimum value over a fixed sequence of steps.
 
         Args:
             model: Inherited from DynamicCustomMean.
             step: Inherited from DynamicCustomMean.
 
         Keyword Args:
-            w_lim (Tuple[float, float]): Minimum and maximum value of
-              weighting parameter w. Defaults to (0.0, 1.0).
-            step_range (Tuple[int, int]): Step range over which weighting
-              parameter w is changed from maximum to minimum value.
-              Defaults to (0, 10).
+            w_lim (Tuple[float, float]): Minimum and maximum value of weighting parameter w.
+              Defaults to (0.0, 1.0).
+            step_range (Tuple[int, int]): Step range over which weighting parameter w is changed from maximum to
+              minimum value. Defaults to (0, 10).
 
         Attributes:
             w (float): Weighting parameter.
@@ -83,19 +81,17 @@ class OccasionalConstant(DynamicCustomMean, ConstantMean):
     ):
         """Prior mean which occasionally reverts to a constant prior.
 
-        Reverts to a constant prior at every n-th step, that is, if
-        (step + 1) % n == 0. If defined, there is also a probability of
-        reverting to a constant prior at every step.
+        Reverts to a constant prior at every n-th step, that is, if (step + 1) % n == 0. If defined, there is
+        also a probability of reverting to a constant prior at every step.
 
         Args:
             model: Inherited from DynamicCustomMean.
             step: Inherited from DynamicCustomMean.
 
         Keyword Args:
-            n (int): If not None, a constant prior is used at every n-th step.
+            n (int): If not None, a constant prior is used at every n-th step. Defaults to None.
+            prob (float): If not None, determines the probability of reverting to a constant prior at every step.
               Defaults to None.
-            prob (float): If not None, determines the probability of reverting
-              to a constant prior at every step. Defaults to None.
 
         Attributes:
             use_constant (bool): Whether a constant prior is used.
@@ -133,19 +129,17 @@ class OccasionalModel(OccasionalConstant):
     ):
         """Prior mean which occasionally reverts to a model-based prior.
 
-        Reverts to a model-based prior at every n-th step, that is, if
-        (step + 1) % n == 0. If defined, there is also a probability of
-        reverting to a model-based prior at every step.
+        Reverts to a model-based prior at every n-th step, that is, if (step + 1) % n == 0. If defined, there is
+        also a probability of reverting to a model-based prior at every step.
 
         Args:
             model: Inherited from DynamicCustomMean.
             step: Inherited from DynamicCustomMean.
 
         Keyword Args:
-            n (int): If not None, a model-based prior is used at every n-th
+            n (int): If not None, a model-based prior is used at every n-th step. Defaults to None.
+            prob (float): If not None, determines the probability of reverting to a model-based prior at every
               step. Defaults to None.
-            prob (float): If not None, determines the probability of reverting
-              to a model-based prior at every step. Defaults to None.
 
         Attributes:
             use_constant (bool): Whether a constant prior is used.
