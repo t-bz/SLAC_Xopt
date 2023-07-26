@@ -59,7 +59,7 @@ def optimize_function(
     )
     X.options.strict = True
 
-    # evaluate random intial points
+    # evaluate random initial points
     X.random_evaluate(n_initial)
 
     # run optimization
