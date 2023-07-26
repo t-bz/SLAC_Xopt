@@ -13,13 +13,13 @@ from scripts.optimize_function import optimize_function
 
 class ScreenEmittanceConfig(BaseModel):
     scan_variable: str
-    scan_variable_range: List = Field(min_length=2, max_length=2)
+    scan_variable_range: List = Field(min_items=2, max_items=2)
     screen_name: str
     quad_length: PositiveFloat
     drift_length: PositiveFloat
     beam_energy: PositiveFloat
     tuning_variables: Dict[str, List] = None
-    roi: list = Field(None, min_length=4, max_length=4)
+    roi: List = Field(None, min_items=4, max_items=4)
     threshold: float = 0.0
     measure_background_flag: bool = False
     background_file: str = None
