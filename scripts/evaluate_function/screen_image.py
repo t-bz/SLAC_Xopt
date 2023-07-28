@@ -1,4 +1,6 @@
 import time
+from copy import deepcopy
+
 import numpy as np
 import pandas as pd
 
@@ -29,7 +31,7 @@ def get_raw_image(screen_name):
 
 
 def measure_background(screen_name, n_measurements: int = 20, filename: str = None,):
-    filename = filename or f"{screen_name}_background".replace(":","_")
+    filename = filename or f"{screen_name}_background".replace(":", "_")
 
     images = []
     for i in range(n_measurements):
@@ -50,12 +52,16 @@ def measure_background(screen_name, n_measurements: int = 20, filename: str = No
 
 
 def measure_beamsize(inputs):
-    roi = inputs.pop("roi")
     screen = inputs.pop("screen")
-    threshold = inputs.pop("threshold")
+
+    # NOTE: the defaults specified here are not tracked by Xopt!
+    roi = inputs.pop("roi", None)
+    threshold = inputs.pop("threshold", 0)
     n_shots = inputs.pop("n_shots", 1)
     bb_half_width = inputs.pop("bb_half_width", 2.0)
     visualize = inputs.pop("visualize", False)
+    save_img_location = inputs.pop("save_img_location", None)
+    sleep_time = inputs.pop("sleep_time", 1.0)
 
     if inputs["background"] is not None:
         background_image = np.load(inputs.pop("background"))
@@ -68,7 +74,7 @@ def measure_beamsize(inputs):
             print(f'CAPUT {k} {v}')
             caput(k, v)
 
-    sleep(1.0)
+    sleep(sleep_time)
 
     data = []
     for _ in range(n_shots):
@@ -90,6 +96,10 @@ def measure_beamsize(inputs):
 
         current_time = time.time()
         results["time"] = current_time
+
+        # if specified, save image to location based on time stamp
+        if save_img_location is not None:
+            np.save(f"{save_img_location}/{current_time}.npy", img)
 
         data += [results]
 
