@@ -1,6 +1,7 @@
 from typing import Callable, Dict
 
 import pandas as pd
+from pandas import DataFrame
 from xopt import Evaluator, Xopt, VOCS
 from xopt.generators import ExpectedImprovementGenerator
 import numpy as np
@@ -11,6 +12,7 @@ def optimize_function(
         evaluator_function: Callable,
         n_iterations: int = 5,
         n_initial: int = 5,
+        initial_points: DataFrame = None,
         generator_kwargs: Dict = None
 ) -> Xopt:
     """
@@ -59,8 +61,11 @@ def optimize_function(
     )
     X.options.strict = True
 
-    # evaluate random initial points
-    X.random_evaluate(n_initial)
+    if initial_points is not None:
+        X.evaluate_data(initial_points)
+    else:
+        # evaluate random initial points
+        X.random_evaluate(n_initial)
 
     # run optimization
     for i in range(n_iterations):
