@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.ndimage import gaussian_filter
+from scipy.ndimage import gaussian_filter, median_filter
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
@@ -74,16 +74,25 @@ def get_beam_data(
     else:
         roi_data = [0, 0, x_size, y_size]
 
-    filtered_image = gaussian_filter(img, 3.0)
+    # apply a median filter than a gaussian filter
+    img = np.where(
+        img - threshold > 0, img - threshold, 0
+    )
+    img = median_filter(img, 5)
+    img = gaussian_filter(img, 3.0)
 
-    thresholded_image = np.where(
-        filtered_image - threshold > 0, filtered_image - threshold, 0
+    # threshold again by 1%
+    th2 = 0.01*img.max()
+    img = np.where(
+        img - th2 > 0, img - th2, 0
     )
 
     # get circular ROI region
-    roi_c = np.array((roi_data[3], roi_data[2])) / 2
-    roi_radius = np.min((roi_c * 2, np.array(thresholded_image.shape))) / 2
+    roi_c = np.array((roi_data[2], roi_data[3])) / 2
+    roi_radius = np.min((roi_c * 2, np.array(img.shape))) / 2
 
+    #print(roi_c, roi_radius, thresholded_image.shape)
+    
     # set intensity outside circular ROI to zero
     xidx = np.arange(img.shape[0])
     yidx = np.arange(img.shape[1])
@@ -91,11 +100,11 @@ def get_beam_data(
     outside_roi = np.sqrt(
         (mesh[0] - roi_c[0]) ** 2 + (mesh[1] - roi_c[1]) ** 2
     ) > roi_radius
-    thresholded_image[outside_roi.T] = 0
+    img[outside_roi.T] = 0
 
-    total_intensity = np.sum(thresholded_image)
+    total_intensity = np.sum(img)
 
-    cx, cy, sx, sy = calculate_stats(thresholded_image)
+    cx, cy, sx, sy = calculate_stats(img)
     c = np.array((cx, cy))
     s = np.array((sx, sy))
 
@@ -110,21 +119,30 @@ def get_beam_data(
         )
     )
 
+    #print(pts)
+    #print(c)
+    
     # visualization
     if visualize:
         fig, ax = plt.subplots()
-        c = ax.imshow(thresholded_image, origin="lower")
+        c = ax.imshow(img, origin="lower")
         ax.plot(cx, cy, "+r")
-        ax.plot(*roi_c, "+r")
+        ax.plot(*roi_c[::-1], ".r")
         fig.colorbar(c)
 
         rect = patches.Rectangle(pts[0], *s * n_stds * 2.0, facecolor='none',
                                  edgecolor="r")
         ax.add_patch(rect)
 
-        circle = patches.Circle(roi_c, roi_radius, facecolor="none",
+        circle = patches.Circle(roi_c[::-1], roi_radius, facecolor="none",
                                 edgecolor="r")
         ax.add_patch(circle)
+
+        plt.figure()
+        plt.plot(img.sum(axis=0))
+
+        plt.figure()
+        plt.plot(img.sum(axis=1))
 
     distances = np.linalg.norm(pts - roi_c, axis=1)
 

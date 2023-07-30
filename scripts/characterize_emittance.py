@@ -1,4 +1,6 @@
 from typing import Callable, Dict
+import numpy as np
+from copy import deepcopy
 
 import torch
 from emitopt.utils import get_valid_emit_samples_from_quad_scan
@@ -6,12 +8,14 @@ from xopt import VOCS, Xopt, Evaluator
 from xopt.generators import BayesianExplorationGenerator
 from xopt.numerical_optimizer import GridOptimizer
 
+import traceback
 
 def characterize_emittance(
         vocs: VOCS,
         beamsize_evaluator: Callable,
         quad_length: float,
         drift_length: float,
+        beam_energy: float,
         quad_strength_key: str,
         rms_x_key: str,
         rms_y_key: str,
@@ -52,6 +56,9 @@ def characterize_emittance(
 
     drift_length : float
         Drift length from quadrupole to beam size measurement location in [m].
+
+    beam_energy : float
+        Beam energy in GeV.
 
     quad_strength_key : str
         Dictionary key used to specify the geometric quadrupole strength.
@@ -127,33 +134,45 @@ def characterize_emittance(
     for i in range(n_iterations):
         X.step()
 
-    # get data from xopt object and scale to [m^{-2}]
-    k = X.data[quad_strength_key].to_numpy() * quad_strength_scale_factor
-    rms_x = X.data[rms_x_key].to_numpy()
-    rms_y = X.data[rms_y_key].to_numpy()
+    try:
+        analysis_data = deepcopy(X.data)[[quad_strength_key, rms_x_key, rms_y_key]].dropna()
+        
+        # get data from xopt object and scale to [m^{-2}]
+        k = analysis_data[quad_strength_key].to_numpy(dtype=np.double) * quad_strength_scale_factor
+        rms_x = analysis_data[rms_x_key].to_numpy(dtype=np.double)
+        rms_y = analysis_data[rms_y_key].to_numpy(dtype=np.double)
+    
+        # calculate emittances (note negative sign in y-calculation)
+        x_emit_stats = get_valid_emit_samples_from_quad_scan(
+            k,
+            rms_x,
+            quad_length,
+            drift_length,
+            **quad_scan_analysis_kwargs
+        )
+        y_emit_stats = get_valid_emit_samples_from_quad_scan(
+            -k,
+            rms_y,
+            quad_length,
+            drift_length,
+            **quad_scan_analysis_kwargs
+        )
+    
+        # return emittance results in [mm-mrad]
+        gamma = beam_energy / 0.511e-3
+        result = {
+            "x_emittance_median": float(gamma*torch.quantile(x_emit_stats[0], 0.5)),
+            "x_emittance_05": float(gamma*torch.quantile(x_emit_stats[0], 0.05)),
+            "x_emittance_95": float(gamma*torch.quantile(x_emit_stats[0], 0.95)),
+            "y_emittance_median": float(gamma*torch.quantile(y_emit_stats[0], 0.5)),
+            "y_emittance_05": float(gamma*torch.quantile(y_emit_stats[0], 0.05)),
+            "y_emittance_95": float(gamma*torch.quantile(y_emit_stats[0], 0.95)),
+        }
+        
+    except Exception:
+        print(traceback.format_exc())
+        result = {}
 
-    # calculate emittances (note negative sign in y-calculation)
-    x_emit_stats = get_valid_emit_samples_from_quad_scan(
-        k,
-        rms_x,
-        quad_length,
-        drift_length,
-        **quad_scan_analysis_kwargs
-    )
-    y_emit_stats = get_valid_emit_samples_from_quad_scan(
-        -k,
-        rms_y,
-        quad_length,
-        drift_length,
-        **quad_scan_analysis_kwargs
-    )
-
-    # return emittance results in [mm-mrad]
-    return {
-        "x_emittance_median": float(torch.quantile(x_emit_stats[0], 0.5)),
-        "x_emittance_05": float(torch.quantile(x_emit_stats[0], 0.05)),
-        "x_emittance_95": float(torch.quantile(x_emit_stats[0], 0.95)),
-        "y_emittance_median": float(torch.quantile(y_emit_stats[0], 0.5)),
-        "y_emittance_05": float(torch.quantile(y_emit_stats[0], 0.05)),
-        "y_emittance_95": float(torch.quantile(y_emit_stats[0], 0.95)),
-    }, X
+    finally:
+        return result, X
+        

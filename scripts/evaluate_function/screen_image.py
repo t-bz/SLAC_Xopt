@@ -7,7 +7,7 @@ import pandas as pd
 from scripts.utils.image_processing import get_beam_data
 from time import sleep
 
-TESTING = True
+TESTING = False
 
 if not TESTING:
     from epics import caput, caget_many
@@ -20,12 +20,12 @@ def get_raw_image(screen_name):
         resolution = 1.0
     else:
         img, nx, ny, resolution = caget_many([
-            f"{screen_name}:Image:ArrayData",
-            f"{screen_name}:Image:ArraySize1_RBV",
-            f"{screen_name}:Image:ArraySize0_RBV",
+            f"{screen_name}:IMAGE",
+            f"{screen_name}:ROI_XNP",
+            f"{screen_name}:ROI_YNP",
             f"{screen_name}:RESOLUTION"
         ])
-        img = img.reshape(nx, ny)
+        img = img.reshape(ny, nx)
 
     return img, resolution
 
@@ -52,6 +52,7 @@ def measure_background(screen_name, n_measurements: int = 20, filename: str = No
 
 
 def measure_beamsize(inputs):
+    #print(inputs)
     screen = inputs.pop("screen")
 
     # NOTE: the defaults specified here are not tracked by Xopt!
@@ -62,9 +63,11 @@ def measure_beamsize(inputs):
     visualize = inputs.pop("visualize", False)
     save_img_location = inputs.pop("save_img_location", None)
     sleep_time = inputs.pop("sleep_time", 1.0)
+    min_log_intensity = inputs.pop("min_log_intensity", 0.0)
 
-    if inputs["background"] is not None:
-        background_image = np.load(inputs.pop("background"))
+    background = inputs.pop("background", None)
+    if background is not None:
+        background_image = np.load(background)
     else:
         background_image = None
 
@@ -86,8 +89,9 @@ def measure_beamsize(inputs):
             img = np.where(img >= 0, img, 0)
 
         results = get_beam_data(
-            img, roi, threshold, bb_half_width=bb_half_width, visualize=visualize
+            img, roi, threshold, min_log_intensity=min_log_intensity, bb_half_width=bb_half_width, visualize=visualize
         )
+        #results["resolution"] = resolution
 
         # convert beam size results to meters
         if results["Sx"] is not None:
@@ -101,6 +105,8 @@ def measure_beamsize(inputs):
         if save_img_location is not None:
             np.save(f"{save_img_location}/{current_time}.npy", img)
 
+        sleep(1.0)
+
         data += [results]
 
     if n_shots == 1:
@@ -108,9 +114,11 @@ def measure_beamsize(inputs):
     else:
         # collect results into lists
         outputs = pd.DataFrame(data).reset_index().to_dict(orient='list')
+        outputs.pop("index")
 
         # create numpy arrays from lists
-        outputs = {key: np.array(ele) for key, ele in outputs.items()}
+        outputs = {key: list(np.array(ele)) for key, ele in outputs.items()}
 
+    #print(outputs)
     return outputs
 

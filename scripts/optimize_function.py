@@ -13,6 +13,7 @@ def optimize_function(
         n_iterations: int = 5,
         n_initial: int = 5,
         initial_points: DataFrame = None,
+        results_dir: str = None,
         generator_kwargs: Dict = None
 ) -> Xopt:
     """
@@ -53,6 +54,8 @@ def optimize_function(
     generator_kwargs = generator_kwargs or {}
     beamsize_evaluator = Evaluator(function=evaluator_function)
     generator = ExpectedImprovementGenerator(vocs=vocs, **generator_kwargs)
+    generator.numerical_optimizer.max_iter = 100
+    #generator.turbo_controller = "optimize"
 
     X = Xopt(
         vocs=vocs,
@@ -60,6 +63,9 @@ def optimize_function(
         evaluator=beamsize_evaluator
     )
     X.options.strict = True
+
+    if results_dir is not None:
+        X.options.dump_file = f"{results_dir}/optimize_record.yml"
 
     if initial_points is not None:
         X.evaluate_data(initial_points)
@@ -69,6 +75,7 @@ def optimize_function(
 
     # run optimization
     for i in range(n_iterations):
+        print(f"step {i}")
         X.step()
 
     # get best config and re-evaluate it
