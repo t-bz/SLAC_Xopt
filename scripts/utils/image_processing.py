@@ -2,12 +2,12 @@ import numpy as np
 from scipy.ndimage import gaussian_filter, median_filter
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+from scripts.utils.py_emittance_image_processing import Image
 
 
 def get_beam_data(
         img: np.ndarray,
         roi_data: np.ndarray = None,
-        threshold: float = None,
         bb_half_width: float = 2.0,
         min_log_intensity: float = None,
         visualize: bool = True
@@ -57,7 +57,6 @@ def get_beam_data(
             results dict
         """
 
-    threshold = threshold or 0.0
     min_log_intensity = min_log_intensity or 0.0
 
     x_size, y_size = img.shape
@@ -71,51 +70,28 @@ def get_beam_data(
               roi_data[0]:roi_data[0] + roi_data[2],
               roi_data[1]:roi_data[1] + roi_data[3]
               ]
-    else:
-        roi_data = [0, 0, x_size, y_size]
 
-    # apply a median filter than a gaussian filter
-    img = np.where(
-        img - threshold > 0, img - threshold, 0
-    )
-    img = median_filter(img, 5)
-    img = gaussian_filter(img, 3.0)
-
-    # threshold again by 1%
-    th2 = 0.01*img.max()
-    img = np.where(
-        img - th2 > 0, img - th2, 0
-    )
-
-    # get circular ROI region
-    roi_c = np.array((roi_data[2], roi_data[3])) / 2
+    roi_c = np.array(img.shape) / 2
     roi_radius = np.min((roi_c * 2, np.array(img.shape))) / 2
 
-    #print(roi_c, roi_radius, thresholded_image.shape)
-    
-    # set intensity outside circular ROI to zero
-    xidx = np.arange(img.shape[0])
-    yidx = np.arange(img.shape[1])
-    mesh = np.meshgrid(xidx, yidx)
-    outside_roi = np.sqrt(
-        (mesh[0] - roi_c[0]) ** 2 + (mesh[1] - roi_c[1]) ** 2
-    ) > roi_radius
-    img[outside_roi.T] = 0
+    img_obj = Image(img.flatten(), *img.shape)
+    img_obj.reshape_im()
 
-    total_intensity = np.sum(img)
+    img_obj.get_im_projection()
 
-    cx, cy, sx, sy = calculate_stats(img)
-    c = np.array((cx, cy))
-    s = np.array((sx, sy))
+    fit = img_obj.get_sizes(show_plots=visualize)
+    centroid = fit["centroid"]
+    sizes = fit["rms_sizes"]
+    total_intensity = fit["total_intensity"]
 
     # get beam region
     n_stds = bb_half_width
     pts = np.array(
         (
-            c - n_stds * s,
-            c + n_stds * s,
-            c - n_stds * s * np.array((-1, 1)),
-            c + n_stds * s * np.array((-1, 1))
+            centroid - n_stds * sizes,
+            centroid + n_stds * sizes,
+            centroid - n_stds * sizes * np.array((-1, 1)),
+            centroid + n_stds * sizes * np.array((-1, 1))
         )
     )
 
@@ -126,11 +102,11 @@ def get_beam_data(
     if visualize:
         fig, ax = plt.subplots()
         c = ax.imshow(img, origin="lower")
-        ax.plot(cx, cy, "+r")
+        ax.plot(*centroid, "+r")
         ax.plot(*roi_c[::-1], ".r")
         fig.colorbar(c)
 
-        rect = patches.Rectangle(pts[0], *s * n_stds * 2.0, facecolor='none',
+        rect = patches.Rectangle(pts[0], *sizes * n_stds * 2.0, facecolor='none',
                                  edgecolor="r")
         ax.add_patch(rect)
 
@@ -138,11 +114,11 @@ def get_beam_data(
                                 edgecolor="r")
         ax.add_patch(circle)
 
-        plt.figure()
-        plt.plot(img.sum(axis=0))
+        #plt.figure()
+        #plt.plot(img.sum(axis=0))
 
-        plt.figure()
-        plt.plot(img.sum(axis=1))
+        #plt.figure()
+        #plt.plot(img.sum(axis=1))
 
     distances = np.linalg.norm(pts - roi_c, axis=1)
 
@@ -151,10 +127,10 @@ def get_beam_data(
     log10_total_intensity = np.log10(total_intensity)
 
     results = {
-        "Cx": cx,
-        "Cy": cy,
-        "Sx": sx,
-        "Sy": sy,
+        "Cx": centroid[0],
+        "Cy": centroid[1],
+        "Sx": sizes[0],
+        "Sy": sizes[1],
         "bb_penalty": bb_penalty,
         "total_intensity": total_intensity,
         "log10_total_intensity": log10_total_intensity
