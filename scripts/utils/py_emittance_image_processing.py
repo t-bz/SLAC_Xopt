@@ -103,33 +103,33 @@ class Image:
         Returns size in x, size in y, error on x size, error on  y size"""
 
         # Find statistics
-        para_x, para_error_x = self.dispatch(
+        para_x = self.dispatch(
             method, self.x_proj, inital_guess=None, cut_area=cut_area, show_plots=show_plots
         )
-        para_y, para_error_y = self.dispatch(
+        para_y = self.dispatch(
             method, self.y_proj, inital_guess=None, cut_area=cut_area, show_plots=show_plots
         )
 
-        self.xamp, self.yamp, self.xamp_error, self.yamp_error = (
+        self.xamp, self.yamp = (
             para_x[0],
             para_y[0],
-            para_error_x[0],
-            para_error_y[0],
+            #para_error_x[0],
+            #para_error_y[0],
         )
 
-        self.xcen, self.ycen, self.xcen_error, self.ycen_error = (
+        self.xcen, self.ycen = (
             para_x[1],
             para_y[1],
-            para_error_x[1],
-            para_error_y[1],
+            #para_error_x[1],
+            #para_error_y[1],
         )
 
         #      size in x, size in y, error on x size, error on  y size
-        self.xrms, self.yrms, self.xrms_error, self.yrms_error = (
+        self.xrms, self.yrms = (
             para_x[2],
             para_y[2],
-            para_error_x[2],
-            para_error_y[2],
+            #para_error_x[2],
+            #para_error_y[2],
         )
 
         return {

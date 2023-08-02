@@ -8,26 +8,38 @@ import logging
 
 from torch import Tensor
 
+from scripts.utils.batch_minimization import gen_candidates_scipy
+
 logger = logging.getLogger(__name__)
 
 
-def gaussian_linear_background(x, amp, mu, sigma, slope=0, offset=0):
+def gaussian_linear_background(x, amp, mu, sigma, offset=0):
     """Gaussian plus linear background fn"""
     return amp * np.exp(-((x - mu) ** 2) / 2 / sigma ** 2) + offset
 
 
 class GaussianLeastSquares:
-    def __int__(self, train_x: Tensor, train_y: Tensor):
+    def __init__(self, train_x: Tensor, train_y: Tensor):
         self.train_x = train_x
         self.train_y = train_y
 
     def forward(self, X):
-        amp = X[..., 0]
-        mu = X[..., 1]
-        sigma = X[..., 2]
-        offset = X[..., 3]
-        pred = amp * torch.exp(-((self.train_x - mu) ** 2) / 2 / sigma ** 2) + offset
-        return torch.sum((pred - self.train_y)**2)
+        amp = X[..., 0].unsqueeze(-1)
+        mu = X[..., 1].unsqueeze(-1)
+        sigma = X[..., 2].unsqueeze(-1)
+        offset = X[..., 3].unsqueeze(-1)
+        train_x = self.train_x.repeat(*X.shape[:-1], 1)
+        train_y = self.train_y.repeat(*X.shape[:-1], 1)
+        pred = amp * torch.exp(-((train_x - mu) ** 2) / 2 / sigma ** 2) + offset
+        loss = -torch.sum((pred - train_y) ** 2, dim=-1).sqrt() / len(train_y)
+
+        # plt.figure()
+        # plt.plot(pred.detach())
+        # plt.plot(self.train_y)
+        # plt.title(loss)
+        # plt.show()
+
+        return loss
 
 
 def fit_gaussian_linear_background(y, inital_guess=None, show_plots=True,
@@ -44,62 +56,63 @@ def fit_gaussian_linear_background(y, inital_guess=None, show_plots=True,
     # specify initial guesses if not provided in initial_guess
     smoothed_y = np.clip(gaussian_filter(y, 5), 0, np.inf)
 
-    plt.figure()
-    plt.plot(y)
-    plt.plot(smoothed_y)
+    # plt.figure()
+    # plt.plot(y)
+    # plt.plot(smoothed_y)
 
-    offset = inital_guess.pop("offset", np.mean(smoothed_y[-10:]))
+    offset = inital_guess.pop("offset", np.mean(y[-10:]))
     amplitude = inital_guess.pop("amplitude", smoothed_y.max() - offset)
     # slope = inital_guess.pop("slope", 0)
 
     # use weighted mean and rms to guess
     center = inital_guess.pop("mu", np.average(x, weights=smoothed_y))
     sigma = inital_guess.pop(
-        "sigma", 10.0
+        "sigma", 200
     )
 
-    para0 = np.array([amplitude, center, sigma, offset])
-    print(para0)
-    print(smoothed_y.sum())
+    para0 = torch.tensor([amplitude, center, sigma, offset])
+
+    # generate points +/- 50 percent
+    rand_para0 = torch.rand((50, 4)) - 0.5
+    rand_para0[..., 0] = (rand_para0[..., 0] + 1.0) * amplitude
+    rand_para0[..., 1] = (rand_para0[..., 1] + 1.0) * center
+    rand_para0[..., 2] = (rand_para0[..., 2] + 1.0) * sigma
+    rand_para0[..., 3] = rand_para0[..., 3]*200 + offset
+
+    para0 = torch.vstack((para0, rand_para0))
+
+    bounds = torch.tensor((
+        (0, 0, 1.0, -1000.0),
+        (3000.0, y.shape[0], y.shape[0]*3, 1000.0)
+    ))
+
+    #print(para0)
+
+    # clip on bounds
+    para0 = torch.clip(para0, bounds[0], bounds[1])
 
     # create LSQ model
     model = GaussianLeastSquares(torch.tensor(x), torch.tensor(y))
 
-    try:
-        para, para_error = curve_fit(
-            gaussian_linear_background, x, y, p0=para0,
-            bounds=(
-                np.array((0, 0, 0, -np.inf)),
-                np.array((np.inf, y.shape[0], np.inf, np.inf))
-            )
-        )
-    except RuntimeError:
-        logger.info("Fitting failed, taking initial guess.")
-        para = para0
-        para_error = np.array([0] * len(para0))
+    candidates, values = gen_candidates_scipy(
+        para0,
+        model.forward,
+        lower_bounds=bounds[0],
+        upper_bounds=bounds[1],
+    )
+    candidate = candidates[torch.argmax(values)].detach().numpy()
 
-    para[2] = abs(para[2])  # Gaussian width is postivie definite
-    # contraints on the output fit parameters
-    if para[2] >= len(x):
-        para[2] = len(x)
-
-    if abs(para[1]) <= 0:
-        para[1] = 0
-
-    if abs(para[1]) >= len(x):
-        para[1] = len(x)
-
-    plot_fit(x, y, para, show_plots=show_plots)
+    plot_fit(x, y, candidate, show_plots=True)
 
     # taking relevant parameters
-    para_vals = para[0:3]
-    if np.any(np.diag(para_error) < 0) or np.any(np.diag(para_error) == 0):
-        # hardcoded 5% error on init guess
-        para_err_vals = list(np.array(para_vals) * 5 / 100)
-    else:
-        para_err_vals = np.sqrt(np.diag(para_error))[0:3]
+    # para_vals = para[0:3]
+    # if np.any(np.diag(para_error) < 0) or np.any(np.diag(para_error) == 0):
+    #     # hardcoded 5% error on init guess
+    #     para_err_vals = list(np.array(para_vals) * 5 / 100)
+    # else:
+    #     para_err_vals = np.sqrt(np.diag(para_error))[0:3]
 
-    return para_vals, para_err_vals
+    return candidate
 
 
 def find_rms_cut_area(y, para0=None, show_plots=False, cut_area=0.05):
@@ -139,7 +152,7 @@ def find_rms_cut_area(y, para0=None, show_plots=False, cut_area=0.05):
     return para, para_errors
 
 
-def plot_fit(x, y, para_x, savepath="", show_plots=True, save_plots=False):
+def plot_fit(x, y, para_x, savepath="", show_plots=False, save_plots=False):
     """
     Plot  beamsize fit in x or y direction
     """
@@ -150,7 +163,8 @@ def plot_fit(x, y, para_x, savepath="", show_plots=True, save_plots=False):
         x,
         gaussian_linear_background(x, *para_x),
         "r-",
-        label=f"fit: amp={para_x[0]:.1f}, centroid={para_x[1]:.1f}, sigma={para_x[2]:.1f}",
+        label=f"fit: amp={para_x[0]:.1f}, centroid={para_x[1]:.1f}, sigma="
+              f"{para_x[2]:.1f}, offset={para_x[3]:.1f}",
     )
     plt.xlabel("Pixel")
     plt.ylabel("Counts")

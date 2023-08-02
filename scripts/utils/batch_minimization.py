@@ -16,7 +16,7 @@ from torch import Tensor
 
 def gen_candidates_scipy(
     initial_conditions: Tensor,
-    acquisition_function: AcquisitionFunction,
+    acquisition_function: Callable,
     lower_bounds: Optional[Union[float, Tensor]] = None,
     upper_bounds: Optional[Union[float, Tensor]] = None,
     inequality_constraints: Optional[List[Tuple[Tensor, Tensor, float]]] = None,

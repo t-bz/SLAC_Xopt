@@ -1,7 +1,7 @@
-import numpy as np
-from scipy.ndimage import gaussian_filter, median_filter
-import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+import matplotlib.pyplot as plt
+import numpy as np
+
 from scripts.utils.py_emittance_image_processing import Image
 
 

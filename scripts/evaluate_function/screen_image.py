@@ -1,5 +1,4 @@
 import time
-from copy import deepcopy
 
 import numpy as np
 import pandas as pd
@@ -52,12 +51,10 @@ def measure_background(screen_name, n_measurements: int = 20, filename: str = No
 
 
 def measure_beamsize(inputs):
-    #print(inputs)
     screen = inputs.pop("screen")
 
     # NOTE: the defaults specified here are not tracked by Xopt!
     roi = inputs.pop("roi", None)
-    threshold = inputs.pop("threshold", 0)
     n_shots = inputs.pop("n_shots", 1)
     bb_half_width = inputs.pop("bb_half_width", 2.0)
     visualize = inputs.pop("visualize", False)
@@ -89,9 +86,9 @@ def measure_beamsize(inputs):
             img = np.where(img >= 0, img, 0)
 
         results = get_beam_data(
-            img, roi, threshold, min_log_intensity=min_log_intensity, bb_half_width=bb_half_width, visualize=visualize
+            img, roi, min_log_intensity=min_log_intensity,
+            bb_half_width=bb_half_width, visualize=visualize
         )
-        #results["resolution"] = resolution
 
         # convert beam size results to meters
         if results["Sx"] is not None:
