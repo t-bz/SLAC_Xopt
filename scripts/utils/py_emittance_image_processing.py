@@ -11,7 +11,6 @@
 import numpy as np
 from scripts.utils.fitting_methods import (
     fit_gaussian_linear_background,
-    find_rms_cut_area,
 )
 
 import logging
@@ -86,28 +85,19 @@ class Image:
             self.x_proj = self.x_proj - np.mean(self.x_proj[0: self.offset])
             self.y_proj = self.y_proj - np.mean(self.y_proj[0: self.offset])
 
-        # self.x_proj = np.clip(self.x_proj, 90, np.inf)
-        # self.y_proj = np.clip(self.y_proj, 90, np.inf)
         return self.x_proj, self.y_proj
 
-    def dispatch(self, name, *args, **kwargs):
-        fit_type_dict = {
-            "gaussian": fit_gaussian_linear_background,
-            "rms cut area": find_rms_cut_area,
-        }
-        return fit_type_dict[name](*args, **kwargs)
-
-    def get_sizes(self, method="gaussian", show_plots=True, cut_area=0.05):
+    def get_sizes(self, show_plots=True, n_restarts=50):
         """Takes an image (2D array) and optional bg image, finds x and y projections,
         and fits with desired method. Current options are "gaussian" or "rms cut area".
         Returns size in x, size in y, error on x size, error on  y size"""
 
         # Find statistics
-        para_x = self.dispatch(
-            method, self.x_proj, inital_guess=None, cut_area=cut_area, show_plots=show_plots
+        para_x = fit_gaussian_linear_background(
+            self.x_proj, inital_guess=None, show_plots=show_plots, n_restarts=n_restarts
         )
-        para_y = self.dispatch(
-            method, self.y_proj, inital_guess=None, cut_area=cut_area, show_plots=show_plots
+        para_y = fit_gaussian_linear_background(
+            self.y_proj, inital_guess=None, show_plots=show_plots, n_restarts=n_restarts
         )
 
         self.xamp, self.yamp = (

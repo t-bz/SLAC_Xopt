@@ -2,11 +2,12 @@ import time
 
 import numpy as np
 import pandas as pd
+import h5py
 
 from scripts.utils.image_processing import get_beam_data
 from time import sleep
 
-TESTING = False
+TESTING = True
 
 if not TESTING:
     from epics import caput, caget_many
@@ -15,7 +16,7 @@ if not TESTING:
 def get_raw_image(screen_name):
     # get image data
     if TESTING:
-        img = np.load("../../../tests/test_img.npy")
+        img = np.load(screen_name)
         resolution = 1.0
     else:
         img, nx, ny, resolution = caget_many([
@@ -61,6 +62,7 @@ def measure_beamsize(inputs):
     save_img_location = inputs.pop("save_img_location", None)
     sleep_time = inputs.pop("sleep_time", 1.0)
     min_log_intensity = inputs.pop("min_log_intensity", 0.0)
+    extra_pvs = inputs.pop("extra_pvs", [])
 
     background = inputs.pop("background", None)
     if background is not None:
@@ -77,6 +79,9 @@ def measure_beamsize(inputs):
     sleep(sleep_time)
 
     data = []
+    images = []
+    results = {}
+    start_time = time.time()
     for _ in range(n_shots):
         img, resolution = get_raw_image(screen)
 
@@ -85,10 +90,18 @@ def measure_beamsize(inputs):
             img = img - background_image
             img = np.where(img >= 0, img, 0)
 
+        s = time.time()
         results = get_beam_data(
             img, roi, min_log_intensity=min_log_intensity,
-            bb_half_width=bb_half_width, visualize=visualize
+            bb_half_width=bb_half_width, visualize=visualize,
+            n_restarts=10
         )
+        # print(f"fitting time:{time.time() - s}")
+
+        # add measurements of extra pvs to results
+        if not TESTING:
+            extra_results = dict(zip(extra_pvs, caget_many(extra_pvs)))
+            results = results | extra_results
 
         # convert beam size results to meters
         if results["Sx"] is not None:
@@ -98,13 +111,10 @@ def measure_beamsize(inputs):
         current_time = time.time()
         results["time"] = current_time
 
-        # if specified, save image to location based on time stamp
-        if save_img_location is not None:
-            np.save(f"{save_img_location}/{current_time}.npy", img)
-
         sleep(1.0)
 
         data += [results]
+        images += [img]
 
     if n_shots == 1:
         outputs = data[0]
@@ -115,6 +125,15 @@ def measure_beamsize(inputs):
 
         # create numpy arrays from lists
         outputs = {key: list(np.array(ele)) for key, ele in outputs.items()}
+
+    # if specified, save image data to location based on time stamp
+    save_filename = f"{save_img_location}/{start_time}.h5"
+    with h5py.File(save_filename, "w") as hf:
+        dset = hf.create_dataset("images", data=np.array(images))
+        for name, val in (outputs | inputs).items():
+            dset.attrs[name] = val
+
+    outputs["save_filename"] = save_filename
 
     #print(outputs)
     return outputs

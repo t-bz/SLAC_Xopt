@@ -10,6 +10,7 @@ def get_beam_data(
         roi_data: np.ndarray = None,
         bb_half_width: float = 2.0,
         min_log_intensity: float = None,
+        n_restarts: int = 50,
         visualize: bool = True
 ):
     """
@@ -79,7 +80,7 @@ def get_beam_data(
 
     img_obj.get_im_projection()
 
-    fit = img_obj.get_sizes(show_plots=visualize)
+    fit = img_obj.get_sizes(show_plots=visualize, n_restarts=n_restarts)
     centroid = fit["centroid"]
     sizes = fit["rms_sizes"]
     total_intensity = fit["total_intensity"]
@@ -147,24 +148,3 @@ def get_beam_data(
         results["bb_penalty"] = np.NaN
 
     return results
-
-
-def calculate_stats(img):
-    rows, cols = img.shape
-    row_coords = np.arange(rows)
-    col_coords = np.arange(cols)
-
-    m00 = np.sum(img)
-    m10 = np.sum(col_coords[:, np.newaxis] * img.T)
-    m01 = np.sum(row_coords[:, np.newaxis] * img)
-
-    Cx = m10 / m00
-    Cy = m01 / m00
-
-    m20 = np.sum((col_coords[:, np.newaxis] - Cx) ** 2 * img.T)
-    m02 = np.sum((row_coords[:, np.newaxis] - Cy) ** 2 * img)
-
-    sx = (m20 / m00) ** 0.5
-    sy = (m02 / m00) ** 0.5
-
-    return Cx, Cy, sx, sy
