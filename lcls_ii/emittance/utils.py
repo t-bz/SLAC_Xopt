@@ -6,7 +6,7 @@ from scripts.evaluate_function.screen_image import measure_beamsize
 
 ## import variable ranges
 import pandas as pd
-filename = "../../variables.csv"
+filename = "../variables.csv"
 VARIABLE_RANGES = pd.read_csv(filename, index_col=0, header=None).T.to_dict(orient='list')
 SCREEN_NAME = "OTRS:HTR:330"
 
