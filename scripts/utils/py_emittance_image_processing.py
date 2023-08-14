@@ -93,6 +93,7 @@ class Image:
         Returns size in x, size in y, error on x size, error on  y size"""
 
         # Find statistics
+        print(n_restarts)
         para_x = fit_gaussian_linear_background(
             self.x_proj, inital_guess=None, show_plots=show_plots, n_restarts=n_restarts
         )

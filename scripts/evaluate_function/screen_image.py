@@ -7,7 +7,7 @@ import h5py
 from scripts.utils.image_processing import get_beam_data
 from time import sleep
 
-TESTING = True
+TESTING = False
 
 if not TESTING:
     from epics import caput, caget_many
@@ -20,9 +20,9 @@ def get_raw_image(screen_name):
         resolution = 1.0
     else:
         img, nx, ny, resolution = caget_many([
-            f"{screen_name}:IMAGE",
-            f"{screen_name}:ROI_XNP",
-            f"{screen_name}:ROI_YNP",
+            f"{screen_name}:Image:ArrayData",
+            f"{screen_name}:Image:ArraySize0_RBV",
+            f"{screen_name}:Image:ArraySize1_RBV",
             f"{screen_name}:RESOLUTION"
         ])
         img = img.reshape(ny, nx)
@@ -94,9 +94,9 @@ def measure_beamsize(inputs):
         results = get_beam_data(
             img, roi, min_log_intensity=min_log_intensity,
             bb_half_width=bb_half_width, visualize=visualize,
-            n_restarts=10
+            n_restarts=3
         )
-        # print(f"fitting time:{time.time() - s}")
+        print(f"fitting time:{time.time() - s}")
 
         # add measurements of extra pvs to results
         if not TESTING:
@@ -127,13 +127,14 @@ def measure_beamsize(inputs):
         outputs = {key: list(np.array(ele)) for key, ele in outputs.items()}
 
     # if specified, save image data to location based on time stamp
-    save_filename = f"{save_img_location}/{start_time}.h5"
-    with h5py.File(save_filename, "w") as hf:
-        dset = hf.create_dataset("images", data=np.array(images))
-        for name, val in (outputs | inputs).items():
-            dset.attrs[name] = val
-
-    outputs["save_filename"] = save_filename
+    if save_img_location is not None:
+        save_filename = f"{save_img_location}/{start_time}.h5"
+        with h5py.File(save_filename, "w") as hf:
+            dset = hf.create_dataset("images", data=np.array(images))
+            for name, val in (outputs | inputs).items():
+                dset.attrs[name] = val
+    
+        outputs["save_filename"] = save_filename
 
     #print(outputs)
     return outputs

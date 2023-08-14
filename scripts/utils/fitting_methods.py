@@ -49,12 +49,15 @@ def fit_gaussian_linear_background(y, inital_guess=None, show_plots=True,
     # specify initial guesses if not provided in initial_guess
     smoothed_y = np.clip(gaussian_filter(y, 5), 0, np.inf)
 
+    pk_value = np.max(smoothed_y)
+    pk_loc = np.argmax(smoothed_y)
+
     offset = inital_guess.pop("offset", np.mean(y[-10:]))
     amplitude = inital_guess.pop("amplitude", smoothed_y.max() - offset)
     # slope = inital_guess.pop("slope", 0)
 
     # use weighted mean and rms to guess
-    center = inital_guess.pop("mu", np.average(x, weights=smoothed_y))
+    center = inital_guess.pop("mu", pk_loc)
     sigma = inital_guess.pop(
         "sigma", 200
     )
@@ -71,8 +74,8 @@ def fit_gaussian_linear_background(y, inital_guess=None, show_plots=True,
     para0 = torch.vstack((para0, rand_para0))
 
     bounds = torch.tensor((
-        (0, 0, 1.0, -1000.0),
-        (3000.0, y.shape[0], y.shape[0]*3, 1000.0)
+        (pk_value/2.0, 0, 1.0, -1000.0),
+        (30000.0, y.shape[0], y.shape[0]*3, 1000.0)
     ))
 
     # clip on bounds
@@ -86,6 +89,7 @@ def fit_gaussian_linear_background(y, inital_guess=None, show_plots=True,
         model.forward,
         lower_bounds=bounds[0],
         upper_bounds=bounds[1],
+        options={"maxiter":500}
     )
 
     # get best fit from restarts
