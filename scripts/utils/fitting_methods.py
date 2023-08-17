@@ -44,6 +44,7 @@ def fit_gaussian_linear_background(y, inital_guess=None, show_plots=True,
     """
 
     x = np.arange(y.shape[0])
+    width = y.shape[0]
     inital_guess = inital_guess or {}
 
     # specify initial guesses if not provided in initial_guess
@@ -74,8 +75,8 @@ def fit_gaussian_linear_background(y, inital_guess=None, show_plots=True,
     para0 = torch.vstack((para0, rand_para0))
 
     bounds = torch.tensor((
-        (pk_value/2.0, 0, 1.0, -1000.0),
-        (30000.0, y.shape[0], y.shape[0]*3, 1000.0)
+        (pk_value/2.0, center - width/4, 2.0, -1000.0),
+        (pk_value*1.5, center + width/4, y.shape[0]*3, 1000.0)
     ))
 
     # clip on bounds

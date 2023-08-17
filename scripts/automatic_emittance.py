@@ -48,7 +48,7 @@ class ScreenEmittanceMeasurement(BaseModel):
     wait_time: PositiveFloat = 2.0
     n_shots: PositiveInt = 3
     run_dir: str = None
-    secondary_observables: list
+    secondary_observables: list = []
     constants: dict = {}
     visualize: bool = False
 
@@ -61,7 +61,7 @@ class ScreenEmittanceMeasurement(BaseModel):
         sleep(self.wait_time)
 
         # get beam sizes from image diagnostic
-        results = self.image_diagnostic.measure_beamsize(self.n_shots)
+        results = self.image_diagnostic.measure_beamsize(self.n_shots, **inputs)
         results["S_x_mm"] = np.array(results["Sx"]) * 1e-3
         results["S_y_mm"] = np.array(results["Sy"]) * 1e-3
 
@@ -71,7 +71,7 @@ class ScreenEmittanceMeasurement(BaseModel):
         )
 
         # add total beam size
-        results["total_size"] = np.sqrt(results["Sx"] ** 2 + results["Sy"] ** 2)
+        results["total_size"] = np.sqrt(np.array(results["Sx"]) ** 2 + np.array(results["Sy"]) ** 2)
         return results
 
     @property

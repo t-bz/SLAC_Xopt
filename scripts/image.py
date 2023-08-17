@@ -92,7 +92,8 @@ class ImageDiagnostic(BaseModel):
 
         # if specified, save image data to location based on time stamp
         if self.save_image_location is not None:
-            save_filename = f"{self.save_image_location}/{self.screen_name}" \
+            screen_name = self.screen_name.replace(":", "_")
+            save_filename = f"{self.save_image_location}/{screen_name}" \
                             f"_{int(start_time)}.h5"
             with h5py.File(save_filename, "w") as hf:
                 dset = hf.create_dataset("images", data=np.array(images))
@@ -155,7 +156,7 @@ class ImageDiagnostic(BaseModel):
         return img, resolution
 
     def measure_background(self, n_measurements: int = 5, file_location: str = None):
-        file_location = file_location or "."
+        file_location = file_location or ""
         filename = f"{file_location}{self.screen_name}_background.npy".replace(":",
                                                                                 "_")
 
@@ -240,6 +241,11 @@ class ImageDiagnostic(BaseModel):
     def fit_image(self, img):
         x_projection = np.sum(img, axis=0)
         y_projection = np.sum(img, axis=1)
+
+        # subtract min value from projections
+        x_projection = x_projection - x_projection.min()
+        y_projection = y_projection - y_projection.min()
+
 
         para_x = fit_gaussian_linear_background(
             x_projection, show_plots=self.visualize,

@@ -17,8 +17,8 @@ def characterize_emittance(
         quad_strength_key: str,
         rms_x_key: str,
         rms_y_key: str,
-        n_iterations: int = 10,
-        n_initial: int = 5,
+        n_iterations: int = 5,
+        n_initial: int = 1,
         generator_kwargs: Dict = None,
         quad_scan_analysis_kwargs: Dict = None,
         dump_file: str = None
@@ -157,7 +157,7 @@ def characterize_emittance(
         x_emit_stats = get_valid_emit_bmag_samples_from_quad_scan(
             k,
             rms_x,
-            beamline_config.quad_length,
+            beamline_config.scan_quad_length,
             rmat_quad_to_screen_x,
             beta0=beta0_x,
             alpha0=alpha0_x,
@@ -166,7 +166,7 @@ def characterize_emittance(
         y_emit_stats = get_valid_emit_bmag_samples_from_quad_scan(
             -k,
             rms_y,
-            beamline_config.quad_length,
+            beamline_config.scan_quad_length,
             rmat_quad_to_screen_y,
             beta0=beta0_y,
             alpha0=alpha0_y,
