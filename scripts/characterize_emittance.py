@@ -9,16 +9,14 @@ from xopt.numerical_optimizer import GridOptimizer
 
 import traceback
 
+
 def characterize_emittance(
         vocs: VOCS,
         beamsize_evaluator: Callable,
-        quad_length: float,
-        drift_length: float,
-        beam_energy: float,
+        beamline_config,
         quad_strength_key: str,
         rms_x_key: str,
         rms_y_key: str,
-        quad_strength_scale_factor: float = 1.0,
         n_iterations: int = 10,
         n_initial: int = 5,
         generator_kwargs: Dict = None,
@@ -123,7 +121,7 @@ def characterize_emittance(
     X.options.dump_file = dump_file
 
     # evaluate random samples
-    X.random_evaluate(1)
+    X.random_evaluate(n_initial)
 
     # check to make sure the correct data is returned before performing exploration
     assert rms_y_key in X.data.columns
@@ -137,17 +135,17 @@ def characterize_emittance(
         analysis_data = deepcopy(X.data)[[quad_strength_key, rms_x_key, rms_y_key]].dropna()
         
         # get data from xopt object and scale to [m^{-2}]
-        k = analysis_data[quad_strength_key].to_numpy(dtype=np.double) * quad_strength_scale_factor
+        k = analysis_data[
+            quad_strength_key
+            ].to_numpy(dtype=np.double) * beamline_config.pv_to_integrated_gradient
         rms_x = analysis_data[rms_x_key].to_numpy(dtype=np.double)
         rms_y = analysis_data[rms_y_key].to_numpy(dtype=np.double)
 
         rmat_quad_to_screen_x = torch.tensor(
-            [[-2.53258966,  3.7431645 ],
-            [-1.22424655,  1.4145822 ]]
+            beamline_config.transport_matrix_x
         ).double()
         rmat_quad_to_screen_y = torch.tensor(
-            [[ 4.76367421,  7.53186817],
-            [-0.5456758 , -0.65284864]]
+            beamline_config.transport_matrix_y
         ).double()
 
         beta0_x = 5.01
@@ -159,7 +157,7 @@ def characterize_emittance(
         x_emit_stats = get_valid_emit_bmag_samples_from_quad_scan(
             k,
             rms_x,
-            quad_length,
+            beamline_config.quad_length,
             rmat_quad_to_screen_x,
             beta0=beta0_x,
             alpha0=alpha0_x,
@@ -168,7 +166,7 @@ def characterize_emittance(
         y_emit_stats = get_valid_emit_bmag_samples_from_quad_scan(
             -k,
             rms_y,
-            quad_length,
+            beamline_config.quad_length,
             rmat_quad_to_screen_y,
             beta0=beta0_y,
             alpha0=alpha0_y,
@@ -176,7 +174,7 @@ def characterize_emittance(
         )
     
         # return emittance results in [mm-mrad]
-        gamma = beam_energy / 0.511e-3
+        gamma = beamline_config.beam_energy / 0.511e-3
         result = {
             "x_emittance_median": float(gamma*torch.quantile(x_emit_stats[0], 0.5)),
             "x_emittance_05": float(gamma*torch.quantile(x_emit_stats[0], 0.05)),
@@ -195,7 +193,8 @@ def characterize_emittance(
 
     finally:
         return result, X
-        
+
+
 from emitopt.utils import (propagate_sig, 
                             build_quad_rmat, fit_gp_quad_scan, 
                             plot_valid_thick_quad_fits

@@ -1,0 +1,13 @@
+array_data_suffix: Image:ArrayData
+array_n_cols: Image:ArraySize0_RBV
+array_n_rows: Image:ArraySize1_RBV
+background_file: null
+bounding_box_half_width: 3.0
+min_log_intensity: 4.0
+n_fitting_restarts: 1
+resolution: RESOLUTION
+save_image_location: null
+screen_name: OTRS:HTR:330
+testing: true
+verbose: true
+wait_time: 1.0

@@ -4,7 +4,7 @@ from scripts.evaluate_function.screen_image import measure_beamsize
 import numpy as np
 import matplotlib.pyplot as plt
 
-img = np.load("test_img.npy")
+img = np.load("../scripts/utils/test_img.npy")
 
 get_beam_data(
     img,
