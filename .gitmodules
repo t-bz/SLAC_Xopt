@@ -1,0 +1,3 @@
+[submodule "lcls/nn_prior/lcls_cu_injector_nn_model"]
+	path = lcls/nn_prior/lcls_cu_injector_nn_model
+	url = https://github.com/t-bz/lcls_cu_injector_nn_model.git
