@@ -1,0 +1,13 @@
+array_data_suffix: IMAGE
+array_n_cols: ROI_XNP
+array_n_rows: ROI_YNP
+background_file: null
+bounding_box_half_width: 3.0
+min_log_intensity: 4.0
+n_fitting_restarts: 1
+resolution: RESOLUTION
+save_image_location: null
+screen_name: OTRS:IN20:621
+testing: false
+verbose: true
+wait_time: 0.1
