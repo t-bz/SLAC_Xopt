@@ -14,3 +14,5 @@
 .ipynb_checkpoints
 # Compiled Python files
 *.pyc
+# Data directories
+lcls/nn_prior/calibration/output_files
