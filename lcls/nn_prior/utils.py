@@ -1,9 +1,12 @@
 from typing import Dict
+from copy import deepcopy
 
 import torch
 from epics import caget_many
 
 from xopt import VOCS
+from lume_model.variables import InputVariable
+from lume_model.torch.model import PyTorchModel
 
 
 def update_variables(
@@ -66,3 +69,40 @@ def create_vocs(
             constraints=image_constraints,
         )
     return vocs
+
+
+def update_input_variables_to_transformer(lume_model, transformer_loc: int) -> list[InputVariable]:
+    """Returns input variables updated to the transformer at the given location.
+
+    Updated are the value ranges and default of the input variables. This allows, e.g., to add a
+    calibration transformer and to update the input variable specification accordingly.
+
+    Args:
+        lume_model: The LUME-model for which the input variables shall be updated.
+        transformer_loc: The location of the input transformer to adjust for.
+
+    Returns:
+        The updated input variables.
+    """
+    x_old = {
+        "min": torch.tensor([var.value_range[0] for var in lume_model.input_variables.values()], dtype=torch.double),
+        "max": torch.tensor([var.value_range[1] for var in lume_model.input_variables.values()], dtype=torch.double),
+        "default": torch.tensor([var.default for var in lume_model.input_variables.values()], dtype=torch.double),
+    }
+    x_new = {}
+    for key in x_old.keys():
+        x = x_old[key]
+        # compute previous limits at transformer location
+        for i in range(transformer_loc):
+            x = lume_model.input_transformers[i].transform(x)
+        # untransform of transformer to adjust for
+        x = lume_model.input_transformers[transformer_loc].untransform(x)
+        # backtrack through transformers
+        for transformer in lume_model.input_transformers[:transformer_loc][::-1]:
+            x = transformer.untransform(x)
+        x_new[key] = x
+    updated_variables = deepcopy(lume_model.input_variables)
+    for i, var in enumerate(updated_variables.values()):
+        var.value_range = [x_new["min"][i].item(), x_new["max"][i].item()]
+        var.default = x_new["default"][i].item()
+    return updated_variables
