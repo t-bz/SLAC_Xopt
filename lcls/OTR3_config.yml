@@ -11,4 +11,4 @@ screen_name: OTRS:IN20:621
 testing: false
 verbose: true
 wait_time: 0.1
-beam_shutter_pv: MPS:IN20:200:MSHT1_IN_MPS
+beam_shutter_pv: IOC:BSY0:MP01:MSHUTCTL

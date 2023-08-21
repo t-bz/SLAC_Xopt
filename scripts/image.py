@@ -94,7 +94,7 @@ class ImageDiagnostic(BaseModel):
         # if specified, save image data to location based on time stamp
         if self.save_image_location is not None:
             screen_name = self.screen_name.replace(":", "_")
-            save_filename = f"{self.save_image_location}/{screen_name}" \
+            save_filename = f"{self.save_image_location}{screen_name}" \
                             f"_{int(start_time)}.h5"
             with h5py.File(save_filename, "w") as hf:
                 dset = hf.create_dataset("images", data=np.array(images))
@@ -119,8 +119,8 @@ class ImageDiagnostic(BaseModel):
 
     @property
     def pv_names(self) -> list:
-        suffixes = [self.array_data_suffix, self.array_n_cols, self.array_n_rows,
-                    self.resolution]
+        suffixes = [self.array_data_suffix, self.array_n_cols_suffix, self.array_n_rows_suffix,
+                    self.resolution_suffix]
         return [
             f"{self.screen_name}:{ele}" for ele in suffixes
         ]
@@ -163,7 +163,8 @@ class ImageDiagnostic(BaseModel):
         # insert shutter
         if self.beam_shutter_pv is not None:
             old_shutter_state = caget(self.beam_shutter_pv)
-            caput(self.beam_shutter_pv, 1)
+            caput(self.beam_shutter_pv, 0)
+            sleep(5.0)
 
         images = []
         for i in range(n_measurements):
