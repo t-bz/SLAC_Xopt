@@ -9,6 +9,14 @@ from xopt.numerical_optimizer import GridOptimizer
 
 import traceback
 
+from botorch.models.gp_regression import SingleTaskGP
+from botorch.models.transforms import Normalize, Standardize
+from botorch import fit_gpytorch_mll
+from gpytorch import ExactMarginalLogLikelihood
+from gpytorch.kernels import MaternKernel, PolynomialKernel, ScaleKernel
+from gpytorch.priors import GammaPrior
+from gpytorch.likelihoods import GaussianLikelihood
+
 
 def characterize_emittance(
         vocs: VOCS,
@@ -121,7 +129,12 @@ def characterize_emittance(
     X.options.dump_file = dump_file
 
     # evaluate random samples
-    X.random_evaluate(n_initial)
+    # evaluate current point
+    current_val = {
+        beamline_config.scan_quad_pv: caget(beamline_config.scan_quad_pv)
+    }
+    
+    X.evaluate_data(pd.DataFrame(current_val), index=[0])
 
     # check to make sure the correct data is returned before performing exploration
     assert rms_y_key in X.data.columns
@@ -196,7 +209,7 @@ def characterize_emittance(
 
 
 from emitopt.utils import (propagate_sig, 
-                            build_quad_rmat, fit_gp_quad_scan, 
+                            build_quad_rmat,
                             plot_valid_thick_quad_fits
                           )
 
@@ -456,3 +469,79 @@ def plot_valid_thick_quad_fits(k, y, q_len, rmat_quad_to_screen, emit, bmag, sig
     
     plt.tight_layout()
     plt.show()
+
+def fit_gp_quad_scan(
+        k,
+        y,
+        n_samples=10000,
+        n_steps_quad_scan=10,
+        covar_module=None,
+        tkwargs=None,
+):
+    """
+    A function that fits a GP model to an emittance beam size measurement quad scan
+    and returns a set of "virtual scans" (functions sampled from the GP model posterior).
+    The GP is fit to the BEAM SIZE SQUARED, and the virtual quad scans are NOT CHECKED 
+    for physical validity. 
+    
+    Parameters:
+
+        k: 1d numpy array of shape (n_steps_quad_scan,)
+        representing the measurement quad geometric focusing strengths in [m^-2]
+        used in the emittance scan
+
+        y: 1d numpy array of shape (n_steps_quad_scan, )
+            representing the root-mean-square beam size measurements in [m] of an emittance scan
+            with inputs given by k
+            
+        covar_module: the covariance module to be used in fitting of the SingleTaskGP 
+                    (modeling the function y**2 vs. k)
+                    If None, uses ScaleKernel(MaternKernel()).
+
+        tkwargs: dict containing the tensor device and dtype    
+
+        n_samples: the number of virtual measurement scan samples to evaluate for our "Bayesian" estimate
+
+        n_steps_quad_scan: the number of steps in our virtual measurement scans
+
+
+    Returns:
+        k_virtual: a 1d tensor representing the inputs for the virtual measurement scans.
+                    All virtual scans are evaluated at the same set of input locations.
+
+        bss: a tensor of shape (n_samples x n_steps_quad_scan) where each row repesents 
+        the beam size squared results of a virtual quad scan evaluated at the points k_virtual.
+    """
+
+    if tkwargs is None:
+        tkwargs = {"dtype": torch.double, "device": "cpu"}
+
+    k = torch.tensor(k, **tkwargs)
+    y = torch.tensor(y, **tkwargs)
+
+    if covar_module is None:
+        covar_module = ScaleKernel(
+            MaternKernel(), outputscale_prior=GammaPrior(2.0, 0.15)
+        )
+
+    model = SingleTaskGP(
+        k.reshape(-1, 1),
+        y.pow(2).reshape(-1, 1),
+        covar_module=covar_module,
+        input_transform=Normalize(1),
+        outcome_transform=Standardize(1),
+        likelihood=GaussianLikelihood(
+                noise_prior=GammaPrior(0.5, 1.0),
+            )
+    )
+    mll = ExactMarginalLogLikelihood(model.likelihood, model)
+    fit_gpytorch_mll(mll)
+
+    print(model.likelihood.noise)
+
+    k_virtual = torch.linspace(k.min(), k.max(), n_steps_quad_scan, **tkwargs)
+
+    p = model.posterior(k_virtual.reshape(-1, 1))
+    bss = p.sample(torch.Size([n_samples])).reshape(-1, n_steps_quad_scan)
+
+    return k_virtual, bss

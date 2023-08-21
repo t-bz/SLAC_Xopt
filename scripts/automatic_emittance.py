@@ -47,6 +47,8 @@ class ScreenEmittanceMeasurement(BaseModel):
     minimum_log_intensity: PositiveFloat = 4.0
     wait_time: PositiveFloat = 2.0
     n_shots: PositiveInt = 3
+    n_init: PositiveInt = 3
+    n_iterations: PositiveInt = 5
     run_dir: str = None
     secondary_observables: list = []
     constants: dict = {}
@@ -107,6 +109,9 @@ class ScreenEmittanceMeasurement(BaseModel):
             quad_strength_key=self.beamline_config.scan_quad_pv,
             rms_x_key="S_x_mm",
             rms_y_key="S_y_mm",
+            n_initial=self.n_init,
+            n_iterations=self.n_iterations,
+            generator_kwargs={"turbo_controller":"optimize"},
             quad_scan_analysis_kwargs={"visualize": self.visualize},
             dump_file=f"{self.run_dir}/xopt_run.yml"
         )
@@ -115,7 +120,7 @@ class ScreenEmittanceMeasurement(BaseModel):
 
     def dump_yaml(self, fname=None):
         """dump data to file"""
-        fname = fname or f"{self.run_dir}/emittance_config.yaml"
+        fname = fname or f"{self.run_dir}emittance_config.yaml"
         output = json.loads(self.json())
         with open(fname, "w") as f:
             yaml.dump(output, f)
