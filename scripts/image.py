@@ -8,7 +8,7 @@ import h5py
 import numpy as np
 import pandas as pd
 import yaml
-from epics import caget_many
+from epics import caget_many, caput, caget
 from matplotlib import pyplot as plt, patches
 from pydantic import BaseModel, PositiveFloat, PositiveInt
 
@@ -40,9 +40,10 @@ class ROI(BaseModel):
 class ImageDiagnostic(BaseModel):
     screen_name: str
     array_data_suffix: str = "Image:ArrayData"
-    array_n_cols: str = "Image:ArraySize0_RBV"
-    array_n_rows: str = "Image:ArraySize1_RBV"
-    resolution: str = "RESOLUTION"
+    array_n_cols_suffix: str = "Image:ArraySize0_RBV"
+    array_n_rows_suffix: str = "Image:ArraySize1_RBV"
+    resolution_suffix: str = "RESOLUTION"
+    beam_shutter_pv: str = None
 
     background_file: str = None
     save_image_location: Union[str, None] = None
@@ -159,11 +160,19 @@ class ImageDiagnostic(BaseModel):
         file_location = file_location or ""
         filename = f"{file_location}{self.screen_name}_background.npy".replace(":",
                                                                                 "_")
+        # insert shutter
+        if self.beam_shutter_pv is not None:
+            old_shutter_state = caget(self.beam_shutter_pv)
+            caput(self.beam_shutter_pv, 1)
 
         images = []
         for i in range(n_measurements):
             images += [self.get_raw_image()[0]]
             sleep(self.wait_time)
+
+        # restore shutter state
+        if self.beam_shutter_pv is not None:
+            caput(self.beam_shutter_pv, old_shutter_state)
 
         # return average
         images = np.stack(images)

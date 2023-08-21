@@ -1,0 +1,76 @@
+input_variables:
+  CAMR:IN20:186:R_DIST:
+    default: 461.9280452917916
+    range: [242.16710151296803, 540.2354352385224]
+    type: scalar
+  Pulse_length:
+    default: -1.1165990359723674
+    range: [-1.1496055347116485, 3.732711266192187]
+    type: scalar
+  FBCK:BCI0:1:CHRG_S:
+    default: 0.2500179942105756
+    range: [0.2500179942105756, 0.2500179942105756]
+    type: scalar
+  SOLN:IN20:121:BACT:
+    default: 0.4889106921934544
+    range: [0.41351630752853064, 0.5042132828685242]
+    type: scalar
+  QUAD:IN20:121:BACT:
+    default: 0.013992518015306158
+    range: [-0.0027111474311571513, 0.033279398422951904]
+    type: scalar
+  QUAD:IN20:122:BACT:
+    default: -0.0030344944008459562
+    range: [-0.027210440930540897, 0.022777694525981492]
+    type: scalar
+  ACCL:IN20:300:L0A_ADES:
+    default: 58.000000199557164
+    range: [58.000000199557164, 58.000000199557164]
+    type: scalar
+  ACCL:IN20:300:L0A_PDES:
+    default: 3.1881004386299487
+    range: [-12.482393665792776, 22.9781954105603]
+    type: scalar
+  ACCL:IN20:400:L0B_ADES:
+    default: 70.00000011929616
+    range: [70.00000011929616, 70.00000011929616]
+    type: scalar
+  ACCL:IN20:400:L0B_PDES:
+    default: 36.115617233984544
+    range: [-2.2557254987487774, 36.27330903443668]
+    type: scalar
+  QUAD:IN20:361:BACT:
+    default: -2.691258577996132
+    range: [-4.2295205457503595, -2.0802256068859637]
+    type: scalar
+  QUAD:IN20:371:BACT:
+    default: 1.699703607370495
+    range: [0.6678985995473976, 4.320056661934803]
+    type: scalar
+  QUAD:IN20:425:BACT:
+    default: 1.2335009068926392
+    range: [-6.234850037369265, 1.2335009277837847]
+    type: scalar
+  QUAD:IN20:441:BACT:
+    default: -3.829104862059554
+    range: [-4.802895787772664, 4.555582200486404]
+    type: scalar
+  QUAD:IN20:511:BACT:
+    default: 0.42736271540358317
+    range: [-3.6129146282740505, 5.263794205633578]
+    type: scalar
+  QUAD:IN20:525:BACT:
+    default: -1.1863663906100133
+    range: [-5.667434052157075, 1.0217483178742874]
+    type: scalar
+output_variables:
+  OTRS:IN20:571:XRMS:
+    type: scalar
+  OTRS:IN20:571:YRMS:
+    type: scalar
+  sigma_z:
+    type: scalar
+  norm_emit_x:
+    type: scalar
+  norm_emit_y:
+    type: scalar
