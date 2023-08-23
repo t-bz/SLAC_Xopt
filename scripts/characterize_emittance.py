@@ -2,9 +2,12 @@ from typing import Callable, Dict
 import numpy as np
 from copy import deepcopy
 
+import pandas as pd
 import torch
+from pandas import DataFrame
 from xopt import VOCS, Xopt, Evaluator
 from xopt.generators import BayesianExplorationGenerator
+from xopt.generators.bayesian.models.standard import StandardModelConstructor
 from xopt.numerical_optimizer import GridOptimizer
 
 import traceback
@@ -17,6 +20,8 @@ from gpytorch.kernels import MaternKernel, PolynomialKernel, ScaleKernel
 from gpytorch.priors import GammaPrior
 from gpytorch.likelihoods import GaussianLikelihood
 
+from scripts.custom_turbo import QuadScanTurbo
+
 
 def characterize_emittance(
         vocs: VOCS,
@@ -25,8 +30,8 @@ def characterize_emittance(
         quad_strength_key: str,
         rms_x_key: str,
         rms_y_key: str,
+        initial_data: DataFrame,
         n_iterations: int = 5,
-        n_initial: int = 1,
         generator_kwargs: Dict = None,
         quad_scan_analysis_kwargs: Dict = None,
         dump_file: str = None
@@ -119,22 +124,23 @@ def characterize_emittance(
     quad_scan_analysis_kwargs = quad_scan_analysis_kwargs or {}
 
     # set up Xopt object
+    turbo_controller = QuadScanTurbo(vocs, length=1.0)
+
+    model_constructor = StandardModelConstructor(use_low_noise_prior=False)
     generator = BayesianExplorationGenerator(
         vocs=vocs,
         numerical_optimizer=GridOptimizer(n_grid_points=100),
+        model_constructor=model_constructor,
+        turbo_controller=turbo_controller,
         **generator_kwargs
     )
+
     beamsize_evaluator = Evaluator(function=beamsize_evaluator)
     X = Xopt(generator=generator, evaluator=beamsize_evaluator, vocs=vocs)
     X.options.dump_file = dump_file
 
-    # evaluate random samples
-    # evaluate current point
-    current_val = {
-        beamline_config.scan_quad_pv: caget(beamline_config.scan_quad_pv)
-    }
-    
-    X.evaluate_data(pd.DataFrame(current_val), index=[0])
+    # evaluate initial points
+    X.evaluate_data(initial_data)
 
     # check to make sure the correct data is returned before performing exploration
     assert rms_y_key in X.data.columns
@@ -144,9 +150,20 @@ def characterize_emittance(
     for i in range(n_iterations):
         X.step()
 
+    # get trust region
+    tr = X.generator.turbo_controller.get_trust_region(
+            X.generator.model
+        ).flatten().numpy()
+
     try:
         analysis_data = deepcopy(X.data)[[quad_strength_key, rms_x_key, rms_y_key]].dropna()
-        
+
+        # get data within the trust region
+        analysis_data = analysis_data[
+            pd.DataFrame((analysis_data[quad_strength_key] < tr[1], analysis_data[
+                quad_strength_key] > tr[0],)).all()
+        ]
+
         # get data from xopt object and scale to [m^{-2}]
         k = analysis_data[
             quad_strength_key
@@ -425,7 +442,7 @@ def plot_valid_thick_quad_fits(k, y, q_len, rmat_quad_to_screen, emit, bmag, sig
     if tkwargs is None:
         tkwargs = {"dtype": torch.double, "device": "cpu"}
 
-    k_fit = torch.linspace(k.min(), k.max(), 10, **tkwargs)
+    k_fit = torch.linspace(k.min(), k.max(), 100, **tkwargs)
     quad_rmats = build_quad_rmat(k_fit, q_len) # result shape (len(k_fit) x 2 x 2)
     total_rmats = rmat_quad_to_screen.reshape(1,2,2) @ quad_rmats # result shape (len(k_fit) x 2 x 2)
     sig_final = propagate_sig(sig, emit, total_rmats)[0] # result shape len(sig) x len(k_fit) x 3 x 1
@@ -468,7 +485,6 @@ def plot_valid_thick_quad_fits(k, y, q_len, rmat_quad_to_screen, emit, bmag, sig
     ax.set_ylabel('Probability Density')
     
     plt.tight_layout()
-    plt.show()
 
 def fit_gp_quad_scan(
         k,
@@ -536,8 +552,6 @@ def fit_gp_quad_scan(
     )
     mll = ExactMarginalLogLikelihood(model.likelihood, model)
     fit_gpytorch_mll(mll)
-
-    print(model.likelihood.noise)
 
     k_virtual = torch.linspace(k.min(), k.max(), n_steps_quad_scan, **tkwargs)
 

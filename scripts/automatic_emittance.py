@@ -3,9 +3,10 @@ from time import sleep
 from typing import List, Callable, Dict
 
 import numpy as np
+import pandas as pd
 import yaml
 from emitopt.utils import get_quad_strength_conversion_factor
-from epics import caput, caget_many
+from epics import caput, caget_many, caget
 from pydantic import BaseModel, PositiveFloat, PositiveInt
 from xopt import VOCS
 
@@ -101,6 +102,12 @@ class ScreenEmittanceMeasurement(BaseModel):
         if not os.path.exists(self.run_dir):
             os.mkdir(self.run_dir)
 
+        # grab current point
+        current_val = {
+            self.beamline_config.scan_quad_pv: caget(self.beamline_config.scan_quad_pv)
+        }
+        init_point = pd.DataFrame(current_val, index=[0])
+
         # run scan
         emit_results, emit_Xopt = characterize_emittance(
             self.measurement_vocs,
@@ -109,7 +116,7 @@ class ScreenEmittanceMeasurement(BaseModel):
             quad_strength_key=self.beamline_config.scan_quad_pv,
             rms_x_key="S_x_mm",
             rms_y_key="S_y_mm",
-            n_initial=self.n_init,
+            initial_data=init_point,
             n_iterations=self.n_iterations,
             generator_kwargs={"turbo_controller":"optimize"},
             quad_scan_analysis_kwargs={"visualize": self.visualize},
