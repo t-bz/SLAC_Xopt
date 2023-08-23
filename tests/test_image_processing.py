@@ -1,19 +1,28 @@
-from scripts.utils.image_processing import get_beam_data
-from scripts.evaluate_function.screen_image import measure_beamsize
+import os
 
-import numpy as np
-import matplotlib.pyplot as plt
-
-img = np.load("../scripts/utils/test_img.npy")
-
-get_beam_data(
-    img,
-    np.array([0, 0, 120, 110]),
-    3000,
-    visualize=True
-)
+from scripts.image import ImageDiagnostic
+from scripts.utils.read_files import read_file
+import yaml
 
 
-plt.figure()
-plt.imshow(img)
-plt.show()
+class TestImageDiagnostic:
+    def test_load_from_file(self):
+        ImageDiagnostic.parse_obj(yaml.safe_load(open("TEST_config.yml")))
+
+    def test_image_saving(self):
+        diagnostic = ImageDiagnostic.parse_obj(yaml.safe_load(open("TEST_config.yml")))
+
+        # set save image location
+        diagnostic.save_image_location = os.getcwd()
+
+        result = diagnostic.measure_beamsize(3)
+
+        # read file
+        file_info = read_file(result["save_filename"])
+        assert file_info["resolution"] == 1.0
+
+        os.remove(result["save_filename"])
+
+
+
+

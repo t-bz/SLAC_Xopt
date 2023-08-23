@@ -1,4 +1,5 @@
 import json
+import os.path
 from copy import copy
 from time import sleep
 import time
@@ -43,6 +44,7 @@ class ImageDiagnostic(BaseModel):
     array_n_cols_suffix: str = "Image:ArraySize0_RBV"
     array_n_rows_suffix: str = "Image:ArraySize1_RBV"
     resolution_suffix: str = "RESOLUTION"
+    resolution: float = 1.0
     beam_shutter_pv: str = None
 
     background_file: str = None
@@ -57,6 +59,9 @@ class ImageDiagnostic(BaseModel):
 
     testing: bool = False
 
+    class Config:
+        extra = "forbid"
+
     def measure_beamsize(self, n_shots: int = 1, **kwargs):
         """
         conduct a multi-shot measurement to get the beam size from images, returns
@@ -68,13 +73,13 @@ class ImageDiagnostic(BaseModel):
         images = []
         start_time = time.time()
         for _ in range(n_shots):
-            img, resolution = self.get_processed_image()
+            img = self.get_processed_image()
             result = self.calculate_beamsize(img)
 
             # convert beam size results to microns
             if result["Sx"] is not None:
-                result['Sx'] = result['Sx'] * resolution
-                result['Sy'] = result['Sy'] * resolution
+                result['Sx'] = result['Sx'] * self.resolution
+                result['Sy'] = result['Sy'] * self.resolution
 
             results += [result]
             images += [img]
@@ -94,12 +99,13 @@ class ImageDiagnostic(BaseModel):
         # if specified, save image data to location based on time stamp
         if self.save_image_location is not None:
             screen_name = self.screen_name.replace(":", "_")
-            save_filename = f"{self.save_image_location}{screen_name}" \
-                            f"_{int(start_time)}.h5"
+            save_filename = os.path.join(self.save_image_location, f"{screen_name}_{int(start_time)}.h5")
+            screen_stats = json.loads(self.json())
             with h5py.File(save_filename, "w") as hf:
                 dset = hf.create_dataset("images", data=np.array(images))
-                for name, val in (outputs | kwargs).items():
-                    dset.attrs[name] = val
+                for name, val in (outputs | kwargs | screen_stats).items():
+                    if val is not None:
+                        dset.attrs[name] = val
 
             outputs["save_filename"] = save_filename
 
@@ -136,15 +142,15 @@ class ImageDiagnostic(BaseModel):
         if self.testing:
             img = np.zeros((2000, 2000))
             img[800:-800, 900:-900] = 1
-            resolution = 1.0
+            self.resolution = 1.0
         else:
-            img, nx, ny, resolution = caget_many(self.pv_names)
+            img, nx, ny, self.resolution = caget_many(self.pv_names)
             img = img.reshape(ny, nx)
 
-        return img, resolution
+        return img
 
     def get_processed_image(self):
-        img, resolution = self.get_raw_image()
+        img = self.get_raw_image()
 
         # subtract background
         img = img - self.background_image
@@ -154,7 +160,7 @@ class ImageDiagnostic(BaseModel):
         if self.roi is not None:
             img = self.roi.crop_image(img)
 
-        return img, resolution
+        return img
 
     def measure_background(self, n_measurements: int = 5, file_location: str = None):
         file_location = file_location or ""
