@@ -56,6 +56,7 @@ class ImageDiagnostic(BaseModel):
     wait_time: PositiveFloat = 1.0
     n_fitting_restarts: PositiveInt = 1
     visualize: bool = True
+    return_statistics: bool = False
 
     testing: bool = False
 
@@ -95,6 +96,21 @@ class ImageDiagnostic(BaseModel):
 
             # create numpy arrays from lists
             outputs = {key: list(np.array(ele)) for key, ele in outputs.items()}
+
+            # if specified, modify dictionary elements to return statistics of numerical lists
+            if self.return_statistics:
+                new_outputs = {}
+                for name, ele in outputs.items():
+                    if isinstance(ele, list):
+                        if isinstance(ele[0], float):
+                            new_outputs[name] = np.array(ele).mean()
+                            new_outputs[f"{name}_var"] = np.array(ele).var()
+                        else:
+                            new_outputs[name] = ele
+                    else:
+                        new_outputs[name] = ele
+
+                outputs = new_outputs
 
         # if specified, save image data to location based on time stamp
         if self.save_image_location is not None:
