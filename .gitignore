@@ -16,5 +16,8 @@
 *.pyc
 # Data directories
 lcls/nn_prior/calibration/output_files
+lcls/data
+lcls/nn_prior/small_nn
 *.csv
 *.pt
+
