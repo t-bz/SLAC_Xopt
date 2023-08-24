@@ -17,6 +17,6 @@ class TestImageFitting:
 
             x_projection = np.sum(img, axis=0)
             x_projection = x_projection - x_projection.min()
-            res = fit_gaussian_linear_background(x_projection)
+            fit_gaussian_linear_background(x_projection)
 
         plt.show()
