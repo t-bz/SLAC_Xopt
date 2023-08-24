@@ -32,6 +32,7 @@ def characterize_emittance(
         rms_y_key: str,
         initial_data: DataFrame,
         n_iterations: int = 5,
+        turbo_length: float = 1.0,
         generator_kwargs: Dict = None,
         quad_scan_analysis_kwargs: Dict = None,
         dump_file: str = None
@@ -61,21 +62,15 @@ def characterize_emittance(
     beamsize_evaluator : Callable
         Xopt style callable function that is evaluated during the optimization run.
 
-    quad_length : float
-        Effective magnetic length of the quadrupole in [m].
-
-    drift_length : float
-        Drift length from quadrupole to beam size measurement location in [m].
-
-    beam_energy : float
-        Beam energy in GeV.
+    beamline_config : BeamlineConfig
+        Beamline configuration object containing info about the beamline used for the
+        quad scan.
 
     quad_strength_key : str
         Dictionary key used to specify the geometric quadrupole strength.
 
-    quad_strength_scale_factor : float, optional
-        Scale factor that scales quadrupole strength parameters given by
-        `quad_strength_key` to [m^{-2}]
+    initial_data : DataFrame
+        Initial points to evaluate in order to initialize characterization.
 
     rms_x_key : str
         Dictionary key used to specify the measurement of horizontal beam size.
@@ -86,9 +81,8 @@ def characterize_emittance(
     n_iterations : int, optional
         Number of exploration steps to run. Default: 5
 
-    n_initial : int, optional
-        Number of initial random samples to take before performing exploration
-        steps. Default: 5
+    turbo_length : float, optional
+        Scale factor for turbo lengthscale. In units of GP lengthscales. Default: 1.0
 
     generator_kwargs : dict, optional
         Dictionary passed to generator to customize Bayesian Exploration.
@@ -104,12 +98,15 @@ def characterize_emittance(
     result : dict
         Results dictionary object containing the following keys. Note emittance units
         are [mm-mrad].
-        - `x_emittance_median` : median value of the horizontal emittance
+        - `x_emittance` : median value of the horizontal emittance
         - `x_emittance_05` : 5% quantile value of the horizontal emittance
         - `x_emittance_95` : 95% quantile value of the horizontal emittance
-        - `y_emittance_median` : median value of the vertical emittance
+        - `x_emittance_var : variance of horizontal emittance
+        - `y_emittance` : median value of the vertical emittance
         - `y_emittance_05` : 5% quantile value of the vertical emittance
         - `y_emittance_95` : 95% quantile value of the vertical emittance
+        - `y_emittance_var : variance of vertical emittance
+
     X : Xopt
         Xopt object containing the evaluator, generator, vocs and data objects.
 
@@ -124,8 +121,7 @@ def characterize_emittance(
     quad_scan_analysis_kwargs = quad_scan_analysis_kwargs or {}
 
     # set up Xopt object
-    turbo_controller = QuadScanTurbo(vocs, length=1.0)
-
+    turbo_controller = QuadScanTurbo(vocs, length=turbo_length)
     model_constructor = StandardModelConstructor(use_low_noise_prior=False)
     generator = BayesianExplorationGenerator(
         vocs=vocs,
@@ -178,19 +174,14 @@ def characterize_emittance(
             beamline_config.transport_matrix_y
         ).double()
 
-        beta0_x = 5.01
-        alpha0_x = 0.049
-        beta0_y = 5.01
-        alpha0_y = 0.049
-    
         # calculate emittances (note negative sign in y-calculation)
         x_emit_stats = get_valid_emit_bmag_samples_from_quad_scan(
             k,
             rms_x,
             beamline_config.scan_quad_length,
             rmat_quad_to_screen_x,
-            beta0=beta0_x,
-            alpha0=alpha0_x,
+            beta0=beamline_config.design_beta_x,
+            alpha0=beamline_config.design_alpha_x,
             **quad_scan_analysis_kwargs
         )
         y_emit_stats = get_valid_emit_bmag_samples_from_quad_scan(
@@ -198,24 +189,27 @@ def characterize_emittance(
             rms_y,
             beamline_config.scan_quad_length,
             rmat_quad_to_screen_y,
-            beta0=beta0_y,
-            alpha0=alpha0_y,
+            beta0=beamline_config.design_beta_y,
+            alpha0=beamline_config.design_alpha_y,
             **quad_scan_analysis_kwargs
         )
     
         # return emittance results in [mm-mrad]
         gamma = beamline_config.beam_energy / 0.511e-3
         result = {
-            "x_emittance_median": float(gamma*torch.quantile(x_emit_stats[0], 0.5)),
+            "x_emittance": float(gamma*torch.quantile(x_emit_stats[0], 0.5)),
             "x_emittance_05": float(gamma*torch.quantile(x_emit_stats[0], 0.05)),
             "x_emittance_95": float(gamma*torch.quantile(x_emit_stats[0], 0.95)),
-            "y_emittance_median": float(gamma*torch.quantile(y_emit_stats[0], 0.5)),
+            "x_emittance_var": float(gamma*torch.var(x_emit_stats[0])),
+            "y_emittance": float(gamma*torch.quantile(y_emit_stats[0], 0.5)),
             "y_emittance_05": float(gamma*torch.quantile(y_emit_stats[0], 0.05)),
             "y_emittance_95": float(gamma*torch.quantile(y_emit_stats[0], 0.95)),
-            "bmag_x_median": float(torch.quantile(x_emit_stats[1], 0.5)),
-            "bmag_y_median": float(torch.quantile(y_emit_stats[1], 0.5)),
-
+            "y_emittance_var": float(gamma * torch.var(y_emit_stats[0])),
         }
+        if x_emit_stats[1] is not None:
+            result["bmag_x_median"] = float(torch.quantile(x_emit_stats[1], 0.5))
+        if y_emit_stats[1] is not None:
+            result["bmag_y_median"] = float(torch.quantile(y_emit_stats[1], 0.5))
         
     except Exception:
         print(traceback.format_exc())
@@ -286,19 +280,22 @@ def compute_emit_bmag_thick_quad(k, y_batch, q_len, rmat_quad_to_screen, beta0=1
     # propagate beam parameters to screen
     twiss_at_screen = propagate_sig(sig, emit, total_rmats)[1]
     # result shape (n_scans x len(k) x 3 x 1)
-    
-    # get design gamma0 from design beta0, alpha0
-    gamma0 = (1 + alpha0**2) / beta0
-    
-    # compute bmag
-    bmag = 0.5 * (twiss_at_screen[:,:,0,0] * gamma0
-                - 2 * twiss_at_screen[:,:,1,0] * alpha0
-                + twiss_at_screen[:,:,2,0] * beta0
-               )
-    # result shape (n_scans, n_steps_quad_scan)
-    
-    # select minimum bmag from quad scan
-    bmag_min, bmag_min_id = torch.min(bmag, dim=1, keepdim=True) # result shape (n_scans, 1) 
+
+    if alpha0 is not None and beta0 is not None:
+        # get design gamma0 from design beta0, alpha0
+        gamma0 = (1 + alpha0**2) / beta0
+
+        # compute bmag
+        bmag = 0.5 * (twiss_at_screen[:,:,0,0] * gamma0
+                    - 2 * twiss_at_screen[:,:,1,0] * alpha0
+                    + twiss_at_screen[:,:,2,0] * beta0
+                   )
+        # result shape (n_scans, n_steps_quad_scan)
+
+        # select minimum bmag from quad scan
+        bmag_min, bmag_min_id = torch.min(bmag, dim=1, keepdim=True) # result shape (n_scans, 1)
+    else:
+        bmag_min = None
     
     return emit, bmag_min, sig, is_valid
 
@@ -393,7 +390,11 @@ def get_valid_emit_bmag_samples_from_quad_scan(
     # filter on physical validity
     cut_ids = torch.tensor(range(emit.shape[0]))[is_valid]
     emit_valid = torch.index_select(emit, dim=0, index=cut_ids)
-    bmag_valid = torch.index_select(bmag, dim=0, index=cut_ids)
+    if bmag is not None:
+        bmag_valid = torch.index_select(bmag, dim=0, index=cut_ids)
+    else:
+        bmag_valid = None
+
     sig_valid = torch.index_select(sig, dim=0, index=cut_ids)
 
     if visualize:
@@ -477,12 +478,13 @@ def plot_valid_thick_quad_fits(k, y, q_len, rmat_quad_to_screen, emit, bmag, sig
     ax.set_title('Geometric Emittance Distribution')
     ax.set_xlabel(r'Geometric Emittance ($[\epsilon]=m*rad$)')
     ax.set_ylabel('Probability Density')
-    
-    ax=axs[2]
-    ax.hist(bmag.flatten(), range=(1,5), bins=20, density=True)
-    ax.set_title(r'$\beta_{mag}$ Distribution')
-    ax.set_xlabel(r'$\beta_{mag}$ at Screen')
-    ax.set_ylabel('Probability Density')
+
+    if bmag is not None:
+        ax=axs[2]
+        ax.hist(bmag.flatten(), range=(1,5), bins=20, density=True)
+        ax.set_title(r'$\beta_{mag}$ Distribution')
+        ax.set_xlabel(r'$\beta_{mag}$ at Screen')
+        ax.set_ylabel('Probability Density')
     
     plt.tight_layout()
 

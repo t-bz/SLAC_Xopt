@@ -1,5 +1,6 @@
 import json
-from time import sleep
+from abc import ABC, abstractmethod
+from time import sleep, time
 from typing import List, Callable, Dict
 
 import numpy as np
@@ -11,7 +12,6 @@ from pydantic import BaseModel, PositiveFloat, PositiveInt
 from xopt import VOCS
 
 from scripts.characterize_emittance import characterize_emittance
-from scripts.optimize_function import optimize_function
 from scripts.image import ImageDiagnostic
 import os
 
@@ -30,6 +30,12 @@ class BeamlineConfig(BaseModel):
     # beam parameters
     beam_energy: PositiveFloat
 
+    # design twiss for matching calculation
+    design_beta_x: float = None
+    design_beta_y: float = None
+    design_alpha_x: float = None
+    design_alpha_y: float = None
+
     @property
     def pv_to_focusing_strength(self):
         """
@@ -41,19 +47,91 @@ class BeamlineConfig(BaseModel):
         )
         return self.pv_to_integrated_gradient * int_grad_to_geo_focusing_strength
 
+    @property
+    def design_twiss(self):
+        return [
+            self.design_beta_x,
+            self.design_alpha_x,
+            self.design_beta_y,
+            self.design_alpha_y
+        ]
 
-class ScreenEmittanceMeasurement(BaseModel):
-    image_diagnostic: ImageDiagnostic
+
+class BaseEmittanceMeasurement(BaseModel, ABC):
     beamline_config: BeamlineConfig
-    minimum_log_intensity: PositiveFloat = 4.0
     wait_time: PositiveFloat = 2.0
     n_shots: PositiveInt = 3
-    n_init: PositiveInt = 3
     n_iterations: PositiveInt = 5
-    run_dir: str = None
+    turbo_length: PositiveFloat = 1.0
+    run_dir: str = os.getcwd()
     secondary_observables: list = []
     constants: dict = {}
     visualize: bool = False
+    _dump_file: str = None
+
+    class Config:
+        extra = "forbid"
+        underscore_attrs_are_private = True
+
+    @abstractmethod
+    def eval_beamsize(self, inputs):
+        pass
+
+    @property
+    def dump_file(self):
+        return self._dump_file
+
+    @property
+    @abstractmethod
+    def measurement_vocs(self):
+        pass
+
+    @abstractmethod
+    def get_initial_points(self):
+        pass
+
+    def dump_yaml(self, fname=None):
+        """dump data to file"""
+        fname = fname or f"{self.run_dir}emittance_config.yaml"
+        output = json.loads(self.json())
+        with open(fname, "w") as f:
+            yaml.dump(output, f)
+
+    def yaml(self):
+        return yaml.dump(self.dict(), default_flow_style=None, sort_keys=False)
+
+    def run(self):
+        # set up location to store data
+        if not os.path.exists(self.run_dir):
+            os.mkdir(self.run_dir)
+
+        self._dump_file = os.path.join(
+                self.run_dir,
+                f"emittance_characterize_{int(time())}.yml"
+            )
+
+        # run scan
+        emit_results, emit_Xopt = characterize_emittance(
+            self.measurement_vocs,
+            self.eval_beamsize,
+            self.beamline_config,
+            quad_strength_key=self.beamline_config.scan_quad_pv,
+            rms_x_key="S_x_mm",
+            rms_y_key="S_y_mm",
+            initial_data=self.get_initial_points(),
+            n_iterations=self.n_iterations,
+            turbo_length=self.turbo_length,
+            quad_scan_analysis_kwargs={"visualize": self.visualize},
+            dump_file=self.dump_file
+        )
+
+        return emit_results, emit_Xopt
+
+
+class ScreenEmittanceMeasurement(BaseEmittanceMeasurement):
+    image_diagnostic: ImageDiagnostic
+    beamline_config: BeamlineConfig
+    minimum_log_intensity: PositiveFloat = 4.0
 
     def eval_beamsize(self, inputs):
         # set PVs
@@ -74,7 +152,8 @@ class ScreenEmittanceMeasurement(BaseModel):
         )
 
         # add total beam size
-        results["total_size"] = np.sqrt(np.array(results["Sx"]) ** 2 + np.array(results["Sy"]) ** 2)
+        results["total_size"] = np.sqrt(
+            np.array(results["Sx"]) ** 2 + np.array(results["Sy"]) ** 2)
         return results
 
     @property
@@ -97,40 +176,10 @@ class ScreenEmittanceMeasurement(BaseModel):
 
         return emit_vocs
 
-    def run(self):
-        # set up location to store data
-        if not os.path.exists(self.run_dir):
-            os.mkdir(self.run_dir)
-
+    def get_initial_points(self):
         # grab current point
         current_val = {
             self.beamline_config.scan_quad_pv: caget(self.beamline_config.scan_quad_pv)
         }
         init_point = pd.DataFrame(current_val, index=[0])
-
-        # run scan
-        emit_results, emit_Xopt = characterize_emittance(
-            self.measurement_vocs,
-            self.eval_beamsize,
-            self.beamline_config,
-            quad_strength_key=self.beamline_config.scan_quad_pv,
-            rms_x_key="S_x_mm",
-            rms_y_key="S_y_mm",
-            initial_data=init_point,
-            n_iterations=self.n_iterations,
-            generator_kwargs={"turbo_controller":"optimize"},
-            quad_scan_analysis_kwargs={"visualize": self.visualize},
-            dump_file=f"{self.run_dir}/xopt_run.yml"
-        )
-
-        return emit_results, emit_Xopt
-
-    def dump_yaml(self, fname=None):
-        """dump data to file"""
-        fname = fname or f"{self.run_dir}emittance_config.yaml"
-        output = json.loads(self.json())
-        with open(fname, "w") as f:
-            yaml.dump(output, f)
-
-    def yaml(self):
-        return yaml.dump(self.dict(), default_flow_style=None, sort_keys=False)
+        return init_point
