@@ -1,17 +1,18 @@
 import os
 
-import numpy as np
-from xopt import VOCS
-
-from scripts.automatic_emittance import BeamlineConfig, BaseEmittanceMeasurement
-from scripts.characterize_emittance import characterize_emittance
 import matplotlib.pyplot as plt
+
+import numpy as np
+
+from scripts.automatic_emittance import BaseEmittanceMeasurement, BeamlineConfig
+from scripts.characterize_emittance import characterize_emittance
+from xopt import VOCS
 
 
 def test_beamsize_function(inputs):
     x = inputs["x"]
-    sx = np.sqrt(x ** 2 + x + 1) * (1.0 + np.random.randn(10) * 0.05)
-    sy = np.sqrt(3 * x ** 2 + 2 * x + 1) * (1.0 + np.random.randn(10) * 0.05)
+    sx = np.sqrt(x**2 + x + 1) * (1.0 + np.random.randn(10) * 0.05)
+    sy = np.sqrt(3 * x**2 + 2 * x + 1) * (1.0 + np.random.randn(10) * 0.05)
 
     if np.random.rand() > 0.5:
         sx[3] = np.NAN
@@ -32,10 +33,10 @@ class TAutomaticEmittanceMeasurement(BaseEmittanceMeasurement):
     def measurement_vocs(self):
         vocs = VOCS(
             variables={
-                self.beamline_config.scan_quad_pv:
-                    self.beamline_config.scan_quad_range},
+                self.beamline_config.scan_quad_pv: self.beamline_config.scan_quad_range
+            },
             objectives={"total_size": "MINIMIZE"},
-            observables=["S_x_mm", "S_y_mm"]
+            observables=["S_x_mm", "S_y_mm"],
         )
 
         return vocs
@@ -49,7 +50,7 @@ class TestAutomaticEmittance:
         vocs = VOCS(
             variables={"x": [-5, 5]},
             objectives={"total_size": "MINIMIZE"},
-            observables=["Sx", "Sy"]
+            observables=["Sx", "Sy"],
         )
 
         beamline_config = BeamlineConfig(
@@ -58,15 +59,21 @@ class TestAutomaticEmittance:
             scan_quad_length=0.1,
             transport_matrix_x=[[1.0, 1.0], [0.0, 1.0]],
             transport_matrix_y=[[1.0, 1.0], [0.0, 1.0]],
-            beam_energy=1.0
+            beam_energy=1.0,
         )
 
         initial_data = vocs.random_inputs(1)
 
         print(initial_data)
         emit_result, emit_x = characterize_emittance(
-            vocs, test_beamsize_function, beamline_config, "x", "Sx", "Sy",
-            initial_data, quad_scan_analysis_kwargs={"visualize": True},
+            vocs,
+            test_beamsize_function,
+            beamline_config,
+            "x",
+            "Sx",
+            "Sy",
+            initial_data,
+            quad_scan_analysis_kwargs={"visualize": True},
             n_iterations=10,
         )
 
@@ -84,21 +91,20 @@ class TestAutomaticEmittance:
         plt.show()
 
     def test_automatic_emittance(self):
-
         beamline_config = BeamlineConfig(
             scan_quad_pv="x",
             scan_quad_range=[-5, 5],
             scan_quad_length=0.1,
             transport_matrix_x=[[1.0, 1.0], [0.0, 1.0]],
             transport_matrix_y=[[1.0, 1.0], [0.0, 1.0]],
-            beam_energy=1.0
+            beam_energy=1.0,
         )
 
         emittance_measurement = TAutomaticEmittanceMeasurement(
             beamline_config=beamline_config,
             n_iterations=10,
             turbo_length=0.75,
-            visualize=True
+            visualize=True,
         )
 
         results, emit_x = emittance_measurement.run()

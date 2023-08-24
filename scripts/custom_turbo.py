@@ -76,7 +76,7 @@ class QuadScanTurbo(OptimizeTurboController):
             data,
             values=self.vocs.objective_names[0],
             columns=self.vocs.variable_names,
-            aggfunc=np.mean
+            aggfunc=np.mean,
         )
 
         # only use points that have enough data
@@ -85,14 +85,14 @@ class QuadScanTurbo(OptimizeTurboController):
             data,
             values=self.vocs.objective_names[0],
             columns=self.vocs.variable_names,
-            aggfunc=list
+            aggfunc=list,
         )
         valid_points = []
         for name, val in list_pivot_table.to_dict().items():
-            if np.count_nonzero(
-                    ~np.isnan(
-                        np.array(val[self.vocs.objective_names[0]]))
-            ) >= min_n_points:
+            if (
+                np.count_nonzero(~np.isnan(np.array(val[self.vocs.objective_names[0]])))
+                >= min_n_points
+            ):
                 valid_points += [name]
 
         mean_pivot_table = mean_pivot_table[valid_points].T

@@ -1,19 +1,19 @@
 import json
+import os
 from abc import ABC, abstractmethod
 from time import sleep, time
-from typing import List, Callable, Dict
+from typing import Callable, Dict, List
 
 import numpy as np
 import pandas as pd
 import yaml
 from emitopt.utils import get_quad_strength_conversion_factor
-from epics import caput, caget_many, caget
+from epics import caget, caget_many, caput
 from pydantic import BaseModel, PositiveFloat, PositiveInt
 from xopt import VOCS
 
 from scripts.characterize_emittance import characterize_emittance
 from scripts.image import ImageDiagnostic
-import os
 
 
 class BeamlineConfig(BaseModel):
@@ -53,7 +53,7 @@ class BeamlineConfig(BaseModel):
             self.design_beta_x,
             self.design_alpha_x,
             self.design_beta_y,
-            self.design_alpha_y
+            self.design_alpha_y,
         ]
 
 
@@ -105,9 +105,8 @@ class BaseEmittanceMeasurement(BaseModel, ABC):
             os.mkdir(self.run_dir)
 
         self._dump_file = os.path.join(
-                self.run_dir,
-                f"emittance_characterize_{int(time())}.yml"
-            )
+            self.run_dir, f"emittance_characterize_{int(time())}.yml"
+        )
 
         # run scan
         emit_results, emit_Xopt = characterize_emittance(
@@ -121,7 +120,7 @@ class BaseEmittanceMeasurement(BaseModel, ABC):
             n_iterations=self.n_iterations,
             turbo_length=self.turbo_length,
             quad_scan_analysis_kwargs={"visualize": self.visualize},
-            dump_file=self.dump_file
+            dump_file=self.dump_file,
         )
 
         return emit_results, emit_Xopt
@@ -135,7 +134,7 @@ class ScreenEmittanceMeasurement(BaseEmittanceMeasurement):
     def eval_beamsize(self, inputs):
         # set PVs
         for k, v in inputs.items():
-            print(f'CAPUT {k} {v}')
+            print(f"CAPUT {k} {v}")
             caput(k, v)
 
         sleep(self.wait_time)
@@ -152,7 +151,8 @@ class ScreenEmittanceMeasurement(BaseEmittanceMeasurement):
 
         # add total beam size
         results["total_size"] = np.sqrt(
-            np.array(results["Sx"]) ** 2 + np.array(results["Sy"]) ** 2)
+            np.array(results["Sx"]) ** 2 + np.array(results["Sy"]) ** 2
+        )
         return results
 
     @property
@@ -160,7 +160,7 @@ class ScreenEmittanceMeasurement(BaseEmittanceMeasurement):
         # standard image constraints
         IMAGE_CONSTRAINTS = {
             "bb_penalty": ["LESS_THAN", 0.0],
-            "log10_total_intensity": ["GREATER_THAN", self.minimum_log_intensity]
+            "log10_total_intensity": ["GREATER_THAN", self.minimum_log_intensity],
         }
 
         # create measurement vocs
@@ -170,7 +170,7 @@ class ScreenEmittanceMeasurement(BaseEmittanceMeasurement):
             },
             observables=["S_x_mm", "S_y_mm"],
             constraints=IMAGE_CONSTRAINTS,
-            constants=self.constants
+            constants=self.constants,
         )
 
         return emit_vocs

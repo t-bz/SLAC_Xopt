@@ -1,16 +1,11 @@
 import torch
-from gpytorch.means import ConstantMean
 
 from custom_mean import CustomMean
+from gpytorch.means import ConstantMean
 
 
 class MetricInformedCustomMean(CustomMean):
-    def __init__(
-            self,
-            model: torch.nn.Module,
-            metrics: dict,
-            **kwargs
-    ):
+    def __init__(self, model: torch.nn.Module, metrics: dict, **kwargs):
         """Adaptive custom prior mean adjusting based on given metrics.
 
         Args:
@@ -26,12 +21,7 @@ class MetricInformedCustomMean(CustomMean):
 
 
 class CorrelationThreshold(MetricInformedCustomMean, ConstantMean):
-    def __init__(
-            self,
-            model: torch.nn.Module,
-            metrics: dict,
-            **kwargs
-    ):
+    def __init__(self, model: torch.nn.Module, metrics: dict, **kwargs):
         """Prior mean reverting to a constant if correlation is below threshold.
 
         Reverts to a constant prior mean unless the model correlation found in the metrics is above a
@@ -55,8 +45,7 @@ class CorrelationThreshold(MetricInformedCustomMean, ConstantMean):
 
     def _forward_constant(self, x):
         constant = self.constant.unsqueeze(-1)  # *batch_shape x 1
-        return constant.expand(
-            torch.broadcast_shapes(constant.shape, x.shape[:-1]))
+        return constant.expand(torch.broadcast_shapes(constant.shape, x.shape[:-1]))
 
     def forward(self, x):
         if self.use_constant:
@@ -66,12 +55,7 @@ class CorrelationThreshold(MetricInformedCustomMean, ConstantMean):
 
 
 class CorrelatedFlatten(MetricInformedCustomMean, ConstantMean):
-    def __init__(
-            self,
-            model: torch.nn.Module,
-            metrics: dict,
-            **kwargs
-    ):
+    def __init__(self, model: torch.nn.Module, metrics: dict, **kwargs):
         """Prior mean composed of a weighted sum with a constant prior.
 
         The output is a weighted sum of the prior mean derived from the given model and a constant prior:

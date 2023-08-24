@@ -1,18 +1,14 @@
 from typing import Optional, Union
 
 import torch
-from gpytorch.means.mean import Mean
-from gpytorch.means import ConstantMean
 from gpytorch.constraints import Interval, Positive
-from gpytorch.priors import Prior, NormalPrior, GammaPrior
+from gpytorch.means import ConstantMean
+from gpytorch.means.mean import Mean
+from gpytorch.priors import GammaPrior, NormalPrior, Prior
 
 
 class CustomMean(Mean):
-    def __init__(
-            self,
-            model: torch.nn.Module,
-            **kwargs
-    ):
+    def __init__(self, model: torch.nn.Module, **kwargs):
         """Custom prior mean for a GP based on an arbitrary model.
 
         Args:
@@ -30,11 +26,7 @@ class CustomMean(Mean):
 
 
 class InputOffsetCalibration(CustomMean):
-    def __init__(
-            self,
-            model: torch.nn.Module,
-            **kwargs
-    ):
+    def __init__(self, model: torch.nn.Module, **kwargs):
         """Prior mean with learnable input offset calibration.
 
         Inputs are offset by a learnable constant parameter: y = model(x + x_shift).
@@ -55,12 +47,22 @@ class InputOffsetCalibration(CustomMean):
         """
         super().__init__(model, **kwargs)
         x_shift_dim = kwargs.get("x_shift_dim", 1)
-        self.register_parameter("raw_x_shift", torch.nn.Parameter(torch.zeros(x_shift_dim)))
+        self.register_parameter(
+            "raw_x_shift", torch.nn.Parameter(torch.zeros(x_shift_dim))
+        )
         x_shift_prior = kwargs.get(
-            "x_shift_prior", NormalPrior(loc=torch.zeros((1, x_shift_dim)), scale=torch.ones((1, x_shift_dim)))
+            "x_shift_prior",
+            NormalPrior(
+                loc=torch.zeros((1, x_shift_dim)), scale=torch.ones((1, x_shift_dim))
+            ),
         )
         if x_shift_prior is not None:
-            self.register_prior("x_shift_prior", x_shift_prior, self._x_shift_param, self._x_shift_closure)
+            self.register_prior(
+                "x_shift_prior",
+                x_shift_prior,
+                self._x_shift_param,
+                self._x_shift_closure,
+            )
         x_shift_constraint = kwargs.get("x_shift_constraint")
         if x_shift_constraint is not None:
             self.register_constraint("raw_x_shift", x_shift_constraint)
@@ -69,7 +71,9 @@ class InputOffsetCalibration(CustomMean):
         if x_shift_fixed is not None:
             self.raw_x_shift.data = x_shift_fixed
             if x_shift_constraint is not None:
-                raw_x_shift = self.raw_x_shift_constraint.inverse_transform(torch.tensor(x_shift_fixed))
+                raw_x_shift = self.raw_x_shift_constraint.inverse_transform(
+                    torch.tensor(x_shift_fixed)
+                )
                 self.raw_x_shift.data = raw_x_shift
             self.raw_x_shift.requires_grad = False
 
@@ -102,11 +106,7 @@ class InputOffsetCalibration(CustomMean):
 
 
 class InputScaleCalibration(CustomMean):
-    def __init__(
-            self,
-            model: torch.nn.Module,
-            **kwargs
-    ):
+    def __init__(self, model: torch.nn.Module, **kwargs):
         """Prior mean with learnable input scale calibration.
 
         Inputs are scaled by a learnable constant parameter: y = model(x_scale * x).
@@ -128,27 +128,40 @@ class InputScaleCalibration(CustomMean):
         """
         super().__init__(model, **kwargs)
         x_scale_dim = kwargs.get("x_scale_dim", 1)
-        self.register_parameter("raw_x_scale", torch.nn.Parameter(torch.ones(x_scale_dim)))
+        self.register_parameter(
+            "raw_x_scale", torch.nn.Parameter(torch.ones(x_scale_dim))
+        )
         # mean=1.0, std=0.5
         x_scale_prior = kwargs.get(
             "x_scale_prior",
-            GammaPrior(concentration=2.0 * torch.ones((1, x_scale_dim)),
-                       rate=2.0 * torch.ones((1, x_scale_dim)))
+            GammaPrior(
+                concentration=2.0 * torch.ones((1, x_scale_dim)),
+                rate=2.0 * torch.ones((1, x_scale_dim)),
+            ),
         )
         if x_scale_prior is not None:
-            self.register_prior("x_scale_prior", x_scale_prior, self._x_scale_param, self._x_scale_closure)
+            self.register_prior(
+                "x_scale_prior",
+                x_scale_prior,
+                self._x_scale_param,
+                self._x_scale_closure,
+            )
         x_scale_constraint = kwargs.get("x_scale_constraint", Positive())
         if x_scale_constraint is not None:
             self.register_constraint("raw_x_scale", x_scale_constraint)
             # correct initial value
-            raw_x_scale_init = self.raw_x_scale_constraint.inverse_transform(torch.ones(x_scale_dim))
+            raw_x_scale_init = self.raw_x_scale_constraint.inverse_transform(
+                torch.ones(x_scale_dim)
+            )
             self.raw_x_scale.data = raw_x_scale_init
         # option to use a fixed parameter
         x_scale_fixed = kwargs.get("x_scale_fixed", None)
         if x_scale_fixed is not None:
             self.raw_x_scale.data = x_scale_fixed
             if x_scale_constraint is not None:
-                raw_x_scale = self.raw_x_scale_constraint.inverse_transform(torch.tensor(x_scale_fixed))
+                raw_x_scale = self.raw_x_scale_constraint.inverse_transform(
+                    torch.tensor(x_scale_fixed)
+                )
                 self.raw_x_scale.data = raw_x_scale
             self.raw_x_scale.requires_grad = False
 
@@ -182,10 +195,10 @@ class InputScaleCalibration(CustomMean):
 
 class LinearInputCalibration(InputOffsetCalibration, InputScaleCalibration):
     def __init__(
-            self,
-            model: torch.nn.Module,
-            x_dim: Optional[int] = None,
-            **kwargs,
+        self,
+        model: torch.nn.Module,
+        x_dim: Optional[int] = None,
+        **kwargs,
     ):
         """Prior mean with learnable linear input calibration.
 
@@ -215,11 +228,7 @@ class LinearInputCalibration(InputOffsetCalibration, InputScaleCalibration):
 
 
 class OutputOffsetCalibration(CustomMean):
-    def __init__(
-            self,
-            model: torch.nn.Module,
-            **kwargs
-    ):
+    def __init__(self, model: torch.nn.Module, **kwargs):
         """Prior mean with learnable output offset calibration.
 
         Outputs are offset by a learnable constant parameter: y = model(x) + y_shift.
@@ -240,12 +249,22 @@ class OutputOffsetCalibration(CustomMean):
         """
         super().__init__(model, **kwargs)
         y_shift_dim = kwargs.get("y_shift_dim", 1)
-        self.register_parameter("raw_y_shift", torch.nn.Parameter(torch.zeros(y_shift_dim)))
+        self.register_parameter(
+            "raw_y_shift", torch.nn.Parameter(torch.zeros(y_shift_dim))
+        )
         y_shift_prior = kwargs.get(
-            "y_shift_prior", NormalPrior(loc=torch.zeros((1, y_shift_dim)), scale=torch.ones((1, y_shift_dim)))
+            "y_shift_prior",
+            NormalPrior(
+                loc=torch.zeros((1, y_shift_dim)), scale=torch.ones((1, y_shift_dim))
+            ),
         )
         if y_shift_prior is not None:
-            self.register_prior("y_shift_prior", y_shift_prior, self._y_shift_param, self._y_shift_closure)
+            self.register_prior(
+                "y_shift_prior",
+                y_shift_prior,
+                self._y_shift_param,
+                self._y_shift_closure,
+            )
         y_shift_constraint = kwargs.get("y_shift_constraint")
         if y_shift_constraint is not None:
             self.register_constraint("raw_y_shift", y_shift_constraint)
@@ -254,7 +273,9 @@ class OutputOffsetCalibration(CustomMean):
         if y_shift_fixed is not None:
             self.raw_y_shift.data = y_shift_fixed
             if y_shift_constraint is not None:
-                raw_y_shift = self.raw_y_shift_constraint.inverse_transform(torch.tensor(y_shift_fixed))
+                raw_y_shift = self.raw_y_shift_constraint.inverse_transform(
+                    torch.tensor(y_shift_fixed)
+                )
                 self.raw_y_shift.data = raw_y_shift
             self.raw_y_shift.requires_grad = False
 
@@ -287,11 +308,7 @@ class OutputOffsetCalibration(CustomMean):
 
 
 class OutputScaleCalibration(CustomMean):
-    def __init__(
-            self,
-            model: torch.nn.Module,
-            **kwargs
-    ):
+    def __init__(self, model: torch.nn.Module, **kwargs):
         """Prior mean with learnable output scale calibration.
 
         Outputs are scaled by a learnable constant parameter: y = y_scale * model(x).
@@ -313,27 +330,40 @@ class OutputScaleCalibration(CustomMean):
         """
         super().__init__(model, **kwargs)
         y_scale_dim = kwargs.get("y_scale_dim", 1)
-        self.register_parameter("raw_y_scale", torch.nn.Parameter(torch.ones(y_scale_dim)))
+        self.register_parameter(
+            "raw_y_scale", torch.nn.Parameter(torch.ones(y_scale_dim))
+        )
         # mean=1.0, std=0.5
         y_scale_prior = kwargs.get(
             "y_scale_prior",
-            GammaPrior(concentration=2.0 * torch.ones((1, y_scale_dim)),
-                       rate=2.0 * torch.ones((1, y_scale_dim)))
+            GammaPrior(
+                concentration=2.0 * torch.ones((1, y_scale_dim)),
+                rate=2.0 * torch.ones((1, y_scale_dim)),
+            ),
         )
         if y_scale_prior is not None:
-            self.register_prior("y_scale_prior", y_scale_prior, self._y_scale_param, self._y_scale_closure)
+            self.register_prior(
+                "y_scale_prior",
+                y_scale_prior,
+                self._y_scale_param,
+                self._y_scale_closure,
+            )
         y_scale_constraint = kwargs.get("y_scale_constraint", Positive())
         if y_scale_constraint is not None:
             self.register_constraint("raw_y_scale", y_scale_constraint)
             # correct initial value
-            raw_y_scale_init = self.raw_y_scale_constraint.inverse_transform(torch.ones(y_scale_dim))
+            raw_y_scale_init = self.raw_y_scale_constraint.inverse_transform(
+                torch.ones(y_scale_dim)
+            )
             self.raw_y_scale.data = raw_y_scale_init
         # option to use a fixed parameter
         y_scale_fixed = kwargs.get("y_scale_fixed", None)
         if y_scale_fixed is not None:
             self.raw_y_scale.data = y_scale_fixed
             if y_scale_fixed is not None:
-                raw_y_scale = self.raw_y_scale_constraint.inverse_transform(torch.tensor(y_scale_fixed))
+                raw_y_scale = self.raw_y_scale_constraint.inverse_transform(
+                    torch.tensor(y_scale_fixed)
+                )
                 self.raw_y_scale.data = raw_y_scale
             self.raw_y_scale.requires_grad = False
 
@@ -367,10 +397,10 @@ class OutputScaleCalibration(CustomMean):
 
 class LinearOutputCalibration(OutputOffsetCalibration, OutputScaleCalibration):
     def __init__(
-            self,
-            model: torch.nn.Module,
-            y_dim: Optional[int] = None,
-            **kwargs,
+        self,
+        model: torch.nn.Module,
+        y_dim: Optional[int] = None,
+        **kwargs,
     ):
         """Prior mean with learnable linear output calibration.
 
@@ -401,9 +431,9 @@ class LinearOutputCalibration(OutputOffsetCalibration, OutputScaleCalibration):
 
 class LinearCalibration(LinearInputCalibration, LinearOutputCalibration):
     def __init__(
-            self,
-            model: torch.nn.Module,
-            **kwargs,
+        self,
+        model: torch.nn.Module,
+        **kwargs,
     ):
         """Prior mean with learnable linear in- and output calibration.
 
@@ -427,11 +457,7 @@ class LinearCalibration(LinearInputCalibration, LinearOutputCalibration):
 
 
 class TrainableFlatten(CustomMean, ConstantMean):
-    def __init__(
-            self,
-            model: torch.nn.Module,
-            **kwargs
-    ):
+    def __init__(self, model: torch.nn.Module, **kwargs):
         """Prior mean composed of a weighted sum with a constant prior.
 
         The output is a weighted sum of the prior mean derived from the given model and a constant prior:
@@ -489,8 +515,7 @@ class TrainableFlatten(CustomMean, ConstantMean):
         if not torch.is_tensor(value):
             value = torch.as_tensor(value).to(m.raw_w)
         if hasattr(m, "raw_w_constraint"):
-            m.initialize(
-                raw_w=m.raw_w_constraint.inverse_transform(value))
+            m.initialize(raw_w=m.raw_w_constraint.inverse_transform(value))
         else:
             m.initialize(raw_w=value)
 

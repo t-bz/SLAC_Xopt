@@ -1,9 +1,10 @@
 import os
 
+import matplotlib.pyplot as plt
+
 import numpy as np
 
 from scripts.utils.fitting_methods import fit_gaussian_linear_background
-import matplotlib.pyplot as plt
 
 
 class TestImageFitting:

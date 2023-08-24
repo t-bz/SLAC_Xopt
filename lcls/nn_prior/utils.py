@@ -1,19 +1,19 @@
-from typing import Dict
 from copy import deepcopy
+from typing import Dict
 
 import torch
 from epics import caget_many
+from lume_model.torch.model import PyTorchModel
+from lume_model.variables import InputVariable
 
 from xopt import VOCS
-from lume_model.variables import InputVariable
-from lume_model.torch.model import PyTorchModel
 
 
 def update_variables(
-        variable_ranges: Dict,
-        input_variables: Dict,
-        inputs_small: torch.Tensor,
-        from_machine_state: bool = False,
+    variable_ranges: Dict,
+    input_variables: Dict,
+    inputs_small: torch.Tensor,
+    from_machine_state: bool = False,
 ) -> Dict[str, list]:
     updated_variables = {}
     if not from_machine_state:
@@ -44,12 +44,16 @@ def update_variables(
 
 
 def create_vocs(
-        measurement_options: Dict,
-        image_constraints: Dict[str, list],
-        updated_variables: Dict[str, list],
-        case: int = 1,
+    measurement_options: Dict,
+    image_constraints: Dict[str, list],
+    updated_variables: Dict[str, list],
+    case: int = 1,
 ) -> VOCS:
-    case_1_variables = ["SOLN:IN20:121:BCTRL", "QUAD:IN20:121:BCTRL", "QUAD:IN20:122:BCTRL"]
+    case_1_variables = [
+        "SOLN:IN20:121:BCTRL",
+        "QUAD:IN20:121:BCTRL",
+        "QUAD:IN20:122:BCTRL",
+    ]
     if case == 1:
         constants = {k: v for k, v in measurement_options.items()}
         for k, v in updated_variables.items():
@@ -71,7 +75,9 @@ def create_vocs(
     return vocs
 
 
-def update_input_variables_to_transformer(lume_model, transformer_loc: int) -> list[InputVariable]:
+def update_input_variables_to_transformer(
+    lume_model, transformer_loc: int
+) -> list[InputVariable]:
     """Returns input variables updated to the transformer at the given location.
 
     Updated are the value ranges and default of the input variables. This allows, e.g., to add a
@@ -85,9 +91,18 @@ def update_input_variables_to_transformer(lume_model, transformer_loc: int) -> l
         The updated input variables.
     """
     x_old = {
-        "min": torch.tensor([var.value_range[0] for var in lume_model.input_variables.values()], dtype=torch.double),
-        "max": torch.tensor([var.value_range[1] for var in lume_model.input_variables.values()], dtype=torch.double),
-        "default": torch.tensor([var.default for var in lume_model.input_variables.values()], dtype=torch.double),
+        "min": torch.tensor(
+            [var.value_range[0] for var in lume_model.input_variables.values()],
+            dtype=torch.double,
+        ),
+        "max": torch.tensor(
+            [var.value_range[1] for var in lume_model.input_variables.values()],
+            dtype=torch.double,
+        ),
+        "default": torch.tensor(
+            [var.default for var in lume_model.input_variables.values()],
+            dtype=torch.double,
+        ),
     }
     x_new = {}
     for key in x_old.keys():

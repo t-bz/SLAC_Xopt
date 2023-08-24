@@ -1,10 +1,12 @@
+import time
+
 import epics
 import numpy as np
-import time
 from edef import EventDefinition
 
 
 # do measurements
+
 
 def get_edef_data():
     PVS = ["GDET:FEE1:241:ENRC"]
@@ -20,7 +22,7 @@ def get_edef_data():
             data = my_edef.get_data_buffer(PVS)
 
     except TypeError:
-        print('tout')
+        print("tout")
         data = get_edef_data()
 
     return data
@@ -59,16 +61,15 @@ def do_measurement(inputs):
 
     losses = epics.caget_many(soft_loss_PVS + hard_loss_PVS)
 
-    data["TOTAL_SOFT_LOSSES"] = np.sum(losses[:len(soft_loss_PVS)])
-    data["TOTAL_HARD_LOSSES"] = np.sum(losses[len(soft_loss_PVS) + 1:])
+    data["TOTAL_SOFT_LOSSES"] = np.sum(losses[: len(soft_loss_PVS)])
+    data["TOTAL_HARD_LOSSES"] = np.sum(losses[len(soft_loss_PVS) + 1 :])
 
     # get averaged pulse intensity for HXR
-    data[
+    data["EM2K0:XGMD:HPS:AvgPulseIntensity"] = epics.caget(
         "EM2K0:XGMD:HPS:AvgPulseIntensity"
-    ] = epics.caget("EM2K0:XGMD:HPS:AvgPulseIntensity")
+    )
 
     data["time"] = time.time()
     data["DUMMY"] = 1.0
 
     return data
-

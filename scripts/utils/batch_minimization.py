@@ -1,15 +1,19 @@
 ## credit botorch
 import warnings
-from typing import Optional, Union, List, Tuple, Callable, Dict, Any
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
 from botorch.acquisition import AcquisitionFunction
 from botorch.generation.gen import _process_scipy_result
 from botorch.generation.utils import _remove_fixed_features_from_optimization
-from botorch.optim.parameter_constraints import make_scipy_bounds, \
-    make_scipy_linear_constraints, _arrayify, \
-    make_scipy_nonlinear_inequality_constraints, NLC_TOL
+from botorch.optim.parameter_constraints import (
+    _arrayify,
+    make_scipy_bounds,
+    make_scipy_linear_constraints,
+    make_scipy_nonlinear_inequality_constraints,
+    NLC_TOL,
+)
 from botorch.optim.utils import columnwise_clamp, fix_features, minimize_with_timeout
 from torch import Tensor
 

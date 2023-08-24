@@ -1,16 +1,16 @@
 import json
 import os.path
+import time
 from copy import copy
 from time import sleep
-import time
 from typing import Union
 
 import h5py
 import numpy as np
 import pandas as pd
 import yaml
-from epics import caget_many, caput, caget
-from matplotlib import pyplot as plt, patches
+from epics import caget, caget_many, caput
+from matplotlib import patches, pyplot as plt
 from pydantic import BaseModel, PositiveFloat, PositiveInt
 
 from scripts.utils.fitting_methods import fit_gaussian_linear_background
@@ -24,16 +24,18 @@ class ROI(BaseModel):
 
     @property
     def bounding_box(self):
-        return [self.xmin, self.xmax, self.xmax-self.xmin, self.ymax-self.ymin]
+        return [self.xmin, self.xmax, self.xmax - self.xmin, self.ymax - self.ymin]
 
     def crop_image(self, img):
         x_size, y_size = img.shape
 
         if self.xmax > x_size or self.ymax > y_size:
-            raise ValueError(f"must specify ROI that is smaller than the image, "
-                             f"image size is {img.shape}")
+            raise ValueError(
+                f"must specify ROI that is smaller than the image, "
+                f"image size is {img.shape}"
+            )
 
-        img = img[self.xmin:self.xmax, self.ymin:self.ymax]
+        img = img[self.xmin : self.xmax, self.ymin : self.ymax]
 
         return img
 
@@ -79,8 +81,8 @@ class ImageDiagnostic(BaseModel):
 
             # convert beam size results to microns
             if result["Sx"] is not None:
-                result['Sx'] = result['Sx'] * self.resolution
-                result['Sy'] = result['Sy'] * self.resolution
+                result["Sx"] = result["Sx"] * self.resolution
+                result["Sy"] = result["Sy"] * self.resolution
 
             results += [result]
             images += [img]
@@ -91,13 +93,14 @@ class ImageDiagnostic(BaseModel):
             outputs = results[0]
         else:
             # collect results into lists
-            outputs = pd.DataFrame(results).reset_index().to_dict(orient='list')
+            outputs = pd.DataFrame(results).reset_index().to_dict(orient="list")
             outputs.pop("index")
 
             # create numpy arrays from lists
             outputs = {key: list(np.array(ele)) for key, ele in outputs.items()}
 
-            # if specified, modify dictionary elements to return statistics of numerical lists
+            # if specified, modify dictionary elements to return
+            # statistics of numerical lists
             if self.return_statistics:
                 new_outputs = {}
                 for name, ele in outputs.items():
@@ -115,7 +118,9 @@ class ImageDiagnostic(BaseModel):
         # if specified, save image data to location based on time stamp
         if self.save_image_location is not None:
             screen_name = self.screen_name.replace(":", "_")
-            save_filename = os.path.join(self.save_image_location, f"{screen_name}_{int(start_time)}.h5")
+            save_filename = os.path.join(
+                self.save_image_location, f"{screen_name}_{int(start_time)}.h5"
+            )
             screen_stats = json.loads(self.json())
             with h5py.File(save_filename, "w") as hf:
                 dset = hf.create_dataset("images", data=np.array(images))
@@ -128,7 +133,7 @@ class ImageDiagnostic(BaseModel):
         return outputs
 
     def test_measurement(self):
-        """ test the beam size measurement w/o saving data """
+        """test the beam size measurement w/o saving data"""
         old_visualize_state = copy(self.visualize)
         old_save_location = copy(self.save_image_location)
         self.visualize = True
@@ -141,11 +146,13 @@ class ImageDiagnostic(BaseModel):
 
     @property
     def pv_names(self) -> list:
-        suffixes = [self.array_data_suffix, self.array_n_cols_suffix, self.array_n_rows_suffix,
-                    self.resolution_suffix]
-        return [
-            f"{self.screen_name}:{ele}" for ele in suffixes
+        suffixes = [
+            self.array_data_suffix,
+            self.array_n_cols_suffix,
+            self.array_n_rows_suffix,
+            self.resolution_suffix,
         ]
+        return [f"{self.screen_name}:{ele}" for ele in suffixes]
 
     @property
     def background_image(self) -> Union[np.ndarray, float]:
@@ -180,8 +187,7 @@ class ImageDiagnostic(BaseModel):
 
     def measure_background(self, n_measurements: int = 5, file_location: str = None):
         file_location = file_location or ""
-        filename = f"{file_location}{self.screen_name}_background.npy".replace(":",
-                                                                                "_")
+        filename = f"{file_location}{self.screen_name}_background.npy".replace(":", "_")
         # insert shutter
         if self.beam_shutter_pv is not None:
             old_shutter_state = caget(self.beam_shutter_pv)
@@ -222,7 +228,7 @@ class ImageDiagnostic(BaseModel):
                     centroid - n_stds * sizes,
                     centroid + n_stds * sizes,
                     centroid - n_stds * sizes * np.array((-1, 1)),
-                    centroid + n_stds * sizes * np.array((-1, 1))
+                    centroid + n_stds * sizes * np.array((-1, 1)),
                 )
             )
 
@@ -234,13 +240,14 @@ class ImageDiagnostic(BaseModel):
                 ax.plot(*roi_c[::-1], ".r")
                 fig.colorbar(c)
 
-                rect = patches.Rectangle(pts[0], *sizes * n_stds * 2.0,
-                                         facecolor='none',
-                                         edgecolor="r")
+                rect = patches.Rectangle(
+                    pts[0], *sizes * n_stds * 2.0, facecolor="none", edgecolor="r"
+                )
                 ax.add_patch(rect)
 
-                circle = patches.Circle(roi_c[::-1], roi_radius, facecolor="none",
-                                        edgecolor="r")
+                circle = patches.Circle(
+                    roi_c[::-1], roi_radius, facecolor="none", edgecolor="r"
+                )
                 ax.add_patch(circle)
 
             distances = np.linalg.norm(pts - roi_c, axis=1)
@@ -260,7 +267,7 @@ class ImageDiagnostic(BaseModel):
             "Sy": sizes[1],
             "bb_penalty": bb_penalty,
             "total_intensity": fits["total_intensity"],
-            "log10_total_intensity": log10_total_intensity
+            "log10_total_intensity": log10_total_intensity,
         }
 
         # set results to none if the beam extends beyond the roi or
@@ -284,19 +291,17 @@ class ImageDiagnostic(BaseModel):
         y_projection = y_projection - y_projection.min()
 
         para_x = fit_gaussian_linear_background(
-            x_projection, visualize=self.visualize,
-            n_restarts=self.n_fitting_restarts
+            x_projection, visualize=self.visualize, n_restarts=self.n_fitting_restarts
         )
         para_y = fit_gaussian_linear_background(
-            y_projection, visualize=self.visualize,
-            n_restarts=self.n_fitting_restarts
+            y_projection, visualize=self.visualize, n_restarts=self.n_fitting_restarts
         )
 
         return {
             "centroid": np.array((para_x[1], para_y[1])),
             "rms_sizes": np.array((para_x[2], para_y[2])),
             "total_intensity": img.sum(),
-            "log10_total_intensity": np.log10(img.sum())
+            "log10_total_intensity": np.log10(img.sum()),
         }
 
     def yaml(self):
@@ -307,12 +312,3 @@ class ImageDiagnostic(BaseModel):
         output = json.loads(self.json())
         with open(fname, "w") as f:
             yaml.dump(output, f)
-
-
-
-
-
-
-
-
-

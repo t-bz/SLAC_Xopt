@@ -1,20 +1,21 @@
 from typing import Callable, Dict
 
+import numpy as np
+
 import pandas as pd
 from pandas import DataFrame
-from xopt import Evaluator, Xopt, VOCS
+from xopt import Evaluator, VOCS, Xopt
 from xopt.generators import ExpectedImprovementGenerator
-import numpy as np
 
 
 def optimize_function(
-        vocs: VOCS,
-        evaluator_function: Callable,
-        n_iterations: int = 5,
-        n_initial: int = 5,
-        initial_points: DataFrame = None,
-        results_dir: str = None,
-        generator_kwargs: Dict = None
+    vocs: VOCS,
+    evaluator_function: Callable,
+    n_iterations: int = 5,
+    n_initial: int = 5,
+    initial_points: DataFrame = None,
+    results_dir: str = None,
+    generator_kwargs: Dict = None,
 ) -> Xopt:
     """
     Function to minimize a given function using Xopt's ExpectedImprovementGenerator.
@@ -55,13 +56,9 @@ def optimize_function(
     beamsize_evaluator = Evaluator(function=evaluator_function)
     generator = ExpectedImprovementGenerator(vocs=vocs, **generator_kwargs)
     generator.numerical_optimizer.max_iter = 100
-    #generator.turbo_controller = "optimize"
+    # generator.turbo_controller = "optimize"
 
-    X = Xopt(
-        vocs=vocs,
-        generator=generator,
-        evaluator=beamsize_evaluator
-    )
+    X = Xopt(vocs=vocs, generator=generator, evaluator=beamsize_evaluator)
     X.options.strict = True
 
     if results_dir is not None:
@@ -82,8 +79,6 @@ def optimize_function(
     best_config = X.data[X.vocs.variable_names + X.vocs.constant_names].iloc[
         np.argmin(X.data[X.vocs.objective_names].to_numpy())
     ]
-    X.evaluate_data(pd.DataFrame(
-        best_config.to_dict(), index=[1]
-    ))
+    X.evaluate_data(pd.DataFrame(best_config.to_dict(), index=[1]))
 
     return X

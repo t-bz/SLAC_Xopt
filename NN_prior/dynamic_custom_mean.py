@@ -1,18 +1,13 @@
 from typing import Tuple
 
 import torch
-from gpytorch.means import ConstantMean
 
 from custom_mean import CustomMean
+from gpytorch.means import ConstantMean
 
 
 class DynamicCustomMean(CustomMean):
-    def __init__(
-            self,
-            model: torch.nn.Module,
-            step: int,
-            **kwargs
-    ):
+    def __init__(self, model: torch.nn.Module, step: int, **kwargs):
         """Dynamic custom prior mean adjusting with the step number.
 
         Args:
@@ -28,12 +23,7 @@ class DynamicCustomMean(CustomMean):
 
 
 class Flatten(DynamicCustomMean, ConstantMean):
-    def __init__(
-            self,
-            model: torch.nn.Module,
-            step: int,
-            **kwargs
-    ):
+    def __init__(self, model: torch.nn.Module, step: int, **kwargs):
         """Prior mean composed of a weighted sum with a constant prior.
 
         The output is a step-dependent, weighted sum of the prior mean derived from the given model and a
@@ -73,12 +63,7 @@ class Flatten(DynamicCustomMean, ConstantMean):
 
 
 class OccasionalConstant(DynamicCustomMean, ConstantMean):
-    def __init__(
-            self,
-            model: torch.nn.Module,
-            step: int,
-            **kwargs
-    ):
+    def __init__(self, model: torch.nn.Module, step: int, **kwargs):
         """Prior mean which occasionally reverts to a constant prior.
 
         Reverts to a constant prior at every n-th step, that is, if (step + 1) % n == 0. If defined, there is
@@ -110,8 +95,7 @@ class OccasionalConstant(DynamicCustomMean, ConstantMean):
 
     def _forward_constant(self, x):
         constant = self.constant.unsqueeze(-1)  # *batch_shape x 1
-        return constant.expand(
-            torch.broadcast_shapes(constant.shape, x.shape[:-1]))
+        return constant.expand(torch.broadcast_shapes(constant.shape, x.shape[:-1]))
 
     def forward(self, x):
         if self.use_constant:
@@ -121,12 +105,7 @@ class OccasionalConstant(DynamicCustomMean, ConstantMean):
 
 
 class OccasionalModel(OccasionalConstant):
-    def __init__(
-            self,
-            model: torch.nn.Module,
-            step: int,
-            **kwargs
-    ):
+    def __init__(self, model: torch.nn.Module, step: int, **kwargs):
         """Prior mean which occasionally reverts to a model-based prior.
 
         Reverts to a model-based prior at every n-th step, that is, if (step + 1) % n == 0. If defined, there is

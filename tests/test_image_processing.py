@@ -1,9 +1,10 @@
 import os
 
+import numpy as np
+import yaml
+
 from scripts.image import ImageDiagnostic
 from scripts.utils.read_files import read_file
-import yaml
-import numpy as np
 
 
 class TestImageDiagnostic:
@@ -44,14 +45,9 @@ class TestImageDiagnostic:
                     "centroid": np.array((para_x[1], para_y[1])),
                     "rms_sizes": np.array((para_x[2], para_y[2])),
                     "total_intensity": img.sum(),
-                    "log10_total_intensity": np.log10(img.sum())
+                    "log10_total_intensity": np.log10(img.sum()),
                 }
 
         bad_image_diagnostic = BadImageDiagnostic(screen_name="TEST")
         result = bad_image_diagnostic.calculate_beamsize(np.ones((20, 20)))
         assert result["Cx"] == np.Nan
-
-
-
-
-
