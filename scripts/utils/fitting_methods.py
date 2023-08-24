@@ -35,8 +35,8 @@ class GaussianLeastSquares:
         return loss
 
 
-def fit_gaussian_linear_background(y, inital_guess=None, show_plots=True,
-                                   n_restarts=50):
+def fit_gaussian_linear_background(y, inital_guess=None, visualize=True,
+                                   n_restarts=1):
     """
     Takes a function y and inputs and fits and Gaussian with
     linear bg to it. Returns the best fit estimates of the parameters
@@ -46,6 +46,7 @@ def fit_gaussian_linear_background(y, inital_guess=None, show_plots=True,
     x = np.arange(y.shape[0])
     width = y.shape[0]
     inital_guess = inital_guess or {}
+    sigma_min = 2.0
 
     # specify initial guesses if not provided in initial_guess
     smoothed_y = np.clip(gaussian_filter(y, 5), 0, np.inf)
@@ -60,7 +61,7 @@ def fit_gaussian_linear_background(y, inital_guess=None, show_plots=True,
     # use weighted mean and rms to guess
     center = inital_guess.pop("mu", pk_loc)
     sigma = inital_guess.pop(
-        "sigma", 200
+        "sigma", y.shape[0] / 5
     )
 
     para0 = torch.tensor([amplitude, center, sigma, offset])
@@ -75,7 +76,7 @@ def fit_gaussian_linear_background(y, inital_guess=None, show_plots=True,
     para0 = torch.vstack((para0, rand_para0))
 
     bounds = torch.tensor((
-        (pk_value/2.0, center - width/4, 2.0, -1000.0),
+        (pk_value/2.0, max(center - width/4, 0), sigma_min, -1000.0),
         (pk_value*1.5, center + width/4, y.shape[0]*3, 1000.0)
     ))
 
@@ -90,38 +91,54 @@ def fit_gaussian_linear_background(y, inital_guess=None, show_plots=True,
         model.forward,
         lower_bounds=bounds[0],
         upper_bounds=bounds[1],
-        options={"maxiter":500}
+        options={"maxiter": 100}
     )
 
-    # get best fit from restarts
-    candidate = candidates[torch.argmax(values)].detach().numpy()
+    # in some cases the fit will return a sigma value of 2.0
+    # drop these from candidates
+    condition = candidates[:, -2] > sigma_min*1.5
+    valid_candidates = candidates[condition]
+    valid_values = values[condition]
 
-    plot_fit(x, y, candidate, show_plots=show_plots)
+    if len(valid_candidates) > 0:
+        # get best valid from restarts
+        candidate = valid_candidates[torch.argmax(valid_values)].detach().numpy()
+
+        if visualize:
+            plot_fit(x, y, candidate)
+
+    else:
+        # if no fits were successful return nans
+        bad_candidate = candidates[torch.argmax(values)].detach().numpy()
+        if visualize:
+            fig,ax = plot_fit(x,y,bad_candidate)
+            ax.set_title("bad fit")
+
+        candidate = [np.NaN] * 4
 
     return candidate
 
 
-def plot_fit(x, y, para_x, savepath="", show_plots=False, save_plots=False):
+def plot_fit(x, y, para_x):
     """
     Plot  beamsize fit in x or y direction
     """
-    timestamp = (datetime.datetime.now()).strftime("%Y-%m-%d_%H-%M-%S-%f")
-    fig = plt.figure(figsize=(7, 5))
-    plt.plot(x, y, "b-", label="data")
-    plt.plot(
+    fig,ax = plt.subplots(figsize=(7, 5))
+
+    ax.plot(x, y, "b-", label="data")
+    ax.plot(
         x,
         gaussian_linear_background(x, *para_x),
         "r-",
         label=f"fit: amp={para_x[0]:.1f}, centroid={para_x[1]:.1f}, sigma="
               f"{para_x[2]:.1f}, offset={para_x[3]:.1f}",
     )
-    plt.xlabel("Pixel")
-    plt.ylabel("Counts")
-    plt.legend(loc="lower center", bbox_to_anchor=(0.5, -0.3))
-    plt.tight_layout()
+    ax.set_xlabel("Pixel")
+    ax.set_ylabel("Counts")
+    ax.legend(loc="lower center", bbox_to_anchor=(0.5, -0.3))
+    fig.tight_layout()
 
-    if save_plots:
-        plt.savefig(savepath + f"beamsize_fit_{timestamp}.png", dpi=100)
-    if show_plots:
-        plt.show()
-    plt.close()
+    return fig,ax
+
+
+

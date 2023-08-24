@@ -214,38 +214,43 @@ class ImageDiagnostic(BaseModel):
         centroid = fits["centroid"]
         sizes = fits["rms_sizes"]
 
-        # get beam region bounding box
-        n_stds = self.bounding_box_half_width
-        pts = np.array(
-            (
-                centroid - n_stds * sizes,
-                centroid + n_stds * sizes,
-                centroid - n_stds * sizes * np.array((-1, 1)),
-                centroid + n_stds * sizes * np.array((-1, 1))
+        if np.all(np.stack((centroid, sizes)) != np.NaN):
+            # get beam region bounding box
+            n_stds = self.bounding_box_half_width
+            pts = np.array(
+                (
+                    centroid - n_stds * sizes,
+                    centroid + n_stds * sizes,
+                    centroid - n_stds * sizes * np.array((-1, 1)),
+                    centroid + n_stds * sizes * np.array((-1, 1))
+                )
             )
-        )
 
-        # visualization
-        if self.visualize:
-            fig, ax = plt.subplots()
-            c = ax.imshow(img, origin="lower")
-            ax.plot(*centroid, "+r")
-            ax.plot(*roi_c[::-1], ".r")
-            fig.colorbar(c)
+            # visualization
+            if self.visualize:
+                fig, ax = plt.subplots()
+                c = ax.imshow(img, origin="lower")
+                ax.plot(*centroid, "+r")
+                ax.plot(*roi_c[::-1], ".r")
+                fig.colorbar(c)
 
-            rect = patches.Rectangle(pts[0], *sizes * n_stds * 2.0,
-                                     facecolor='none',
-                                     edgecolor="r")
-            ax.add_patch(rect)
+                rect = patches.Rectangle(pts[0], *sizes * n_stds * 2.0,
+                                         facecolor='none',
+                                         edgecolor="r")
+                ax.add_patch(rect)
 
-            circle = patches.Circle(roi_c[::-1], roi_radius, facecolor="none",
-                                    edgecolor="r")
-            ax.add_patch(circle)
+                circle = patches.Circle(roi_c[::-1], roi_radius, facecolor="none",
+                                        edgecolor="r")
+                ax.add_patch(circle)
 
-        distances = np.linalg.norm(pts - roi_c, axis=1)
+            distances = np.linalg.norm(pts - roi_c, axis=1)
 
-        # subtract radius to get penalty value
-        bb_penalty = np.max(distances) - roi_radius
+            # subtract radius to get penalty value
+            bb_penalty = np.max(distances) - roi_radius
+
+        else:
+            bb_penalty = np.NaN
+
         log10_total_intensity = fits["log10_total_intensity"]
 
         result = {
@@ -278,13 +283,12 @@ class ImageDiagnostic(BaseModel):
         x_projection = x_projection - x_projection.min()
         y_projection = y_projection - y_projection.min()
 
-
         para_x = fit_gaussian_linear_background(
-            x_projection, show_plots=self.visualize,
+            x_projection, visualize=self.visualize,
             n_restarts=self.n_fitting_restarts
         )
         para_y = fit_gaussian_linear_background(
-            y_projection, show_plots=self.visualize,
+            y_projection, visualize=self.visualize,
             n_restarts=self.n_fitting_restarts
         )
 

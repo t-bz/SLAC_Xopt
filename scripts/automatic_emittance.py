@@ -60,7 +60,6 @@ class BeamlineConfig(BaseModel):
 class BaseEmittanceMeasurement(BaseModel, ABC):
     beamline_config: BeamlineConfig
     wait_time: PositiveFloat = 2.0
-    n_shots: PositiveInt = 3
     n_iterations: PositiveInt = 5
     turbo_length: PositiveFloat = 1.0
     run_dir: str = os.getcwd()
@@ -130,8 +129,8 @@ class BaseEmittanceMeasurement(BaseModel, ABC):
 
 class ScreenEmittanceMeasurement(BaseEmittanceMeasurement):
     image_diagnostic: ImageDiagnostic
-    beamline_config: BeamlineConfig
     minimum_log_intensity: PositiveFloat = 4.0
+    n_shots: PositiveInt = 3
 
     def eval_beamsize(self, inputs):
         # set PVs

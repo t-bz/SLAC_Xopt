@@ -33,6 +33,25 @@ class TestImageDiagnostic:
 
         os.remove(result["save_filename"])
 
+    def test_fitting_fail(self):
+        class BadImageDiagnostic(ImageDiagnostic):
+            def fit_image(self, img):
+                # simulate a failure to fit one axis
+                para_x = [np.NaN] * 4
+                para_y = [1.0] * 4
+
+                return {
+                    "centroid": np.array((para_x[1], para_y[1])),
+                    "rms_sizes": np.array((para_x[2], para_y[2])),
+                    "total_intensity": img.sum(),
+                    "log10_total_intensity": np.log10(img.sum())
+                }
+
+        bad_image_diagnostic = BadImageDiagnostic(screen_name="TEST")
+        result = bad_image_diagnostic.calculate_beamsize(np.ones((20, 20)))
+        assert result["Cx"] == np.Nan
+
+
 
 
 
