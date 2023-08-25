@@ -59,6 +59,7 @@ class ImageDiagnostic(BaseModel):
     n_fitting_restarts: PositiveInt = 1
     visualize: bool = True
     return_statistics: bool = False
+    threshold: float = 0.0
 
     testing: bool = False
 
@@ -179,6 +180,10 @@ class ImageDiagnostic(BaseModel):
         img = img - self.background_image
         img = np.where(img >= 0, img, 0)
 
+        # apply threshold
+        img = img - self.threshold
+        img = np.where(img >= 0, img, 0)
+
         # crop image if specified
         if self.roi is not None:
             img = self.roi.crop_image(img)
@@ -196,7 +201,7 @@ class ImageDiagnostic(BaseModel):
 
         images = []
         for i in range(n_measurements):
-            images += [self.get_raw_image()[0]]
+            images += [self.get_raw_image()]
             sleep(self.wait_time)
 
         # restore shutter state

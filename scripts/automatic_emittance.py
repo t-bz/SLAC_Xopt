@@ -3,6 +3,7 @@ import os
 from abc import ABC, abstractmethod
 from time import sleep, time
 from typing import Callable, Dict, List
+from copy import deepcopy
 
 import numpy as np
 import pandas as pd
@@ -28,7 +29,7 @@ class BeamlineConfig(BaseModel):
     transport_matrix_y: List[List]
 
     # beam parameters
-    beam_energy: PositiveFloat
+    beam_energy: PositiveFloat # in GeV
 
     # design twiss for matching calculation
     design_beta_x: float = None
@@ -82,7 +83,12 @@ class BaseEmittanceMeasurement(BaseModel, ABC):
 
     @property
     @abstractmethod
-    def measurement_vocs(self):
+    def x_measurement_vocs(self):
+        pass
+
+    @property
+    @abstractmethod
+    def y_measurement_vocs(self):
         pass
 
     @abstractmethod
@@ -110,18 +116,20 @@ class BaseEmittanceMeasurement(BaseModel, ABC):
 
         # run scan
         emit_results, emit_Xopt = characterize_emittance(
-            self.measurement_vocs,
+            self.x_measurement_vocs,
+            self.y_measurement_vocs,
             self.eval_beamsize,
             self.beamline_config,
             quad_strength_key=self.beamline_config.scan_quad_pv,
             rms_x_key="S_x_mm",
             rms_y_key="S_y_mm",
-            initial_data=self.get_initial_points(),
+            initial_points=self.get_initial_points(),
             n_iterations=self.n_iterations,
             turbo_length=self.turbo_length,
             quad_scan_analysis_kwargs={"visualize": self.visualize},
             dump_file=self.dump_file,
         )
+        
 
         return emit_results, emit_Xopt
 
@@ -156,24 +164,39 @@ class ScreenEmittanceMeasurement(BaseEmittanceMeasurement):
         return results
 
     @property
-    def measurement_vocs(self):
-        # standard image constraints
+    def base_vocs(self):
         IMAGE_CONSTRAINTS = {
             "bb_penalty": ["LESS_THAN", 0.0],
             "log10_total_intensity": ["GREATER_THAN", self.minimum_log_intensity],
         }
 
         # create measurement vocs
-        emit_vocs = VOCS(
+        base_vocs = VOCS(
             variables={
                 self.beamline_config.scan_quad_pv: self.beamline_config.scan_quad_range
             },
-            observables=["S_x_mm", "S_y_mm"],
             constraints=IMAGE_CONSTRAINTS,
+            observables=["S_x_mm","S_y_mm"],
             constants=self.constants,
         )
 
-        return emit_vocs
+        return base_vocs
+        
+
+    @property
+    def x_measurement_vocs(self):
+        vocs = deepcopy(self.base_vocs)  
+        vocs.objectives={"S_x_mm":"MINIMIZE"}
+
+        return vocs
+
+    @property
+    def y_measurement_vocs(self):
+        vocs = deepcopy(self.base_vocs)   
+        vocs.objectives={"S_y_mm":"MINIMIZE"}
+
+        return vocs
+
 
     def get_initial_points(self):
         # grab current point
@@ -181,4 +204,10 @@ class ScreenEmittanceMeasurement(BaseEmittanceMeasurement):
             self.beamline_config.scan_quad_pv: caget(self.beamline_config.scan_quad_pv)
         }
         init_point = pd.DataFrame(current_val, index=[0])
+        # append two random points
+        init_point = pd.concat(
+            (
+                init_point, pd.DataFrame(self.x_measurement_vocs.random_inputs(2))
+            ), ignore_index=True)
+        
         return init_point

@@ -19,18 +19,95 @@ from xopt import Evaluator, VOCS, Xopt
 from xopt.generators import BayesianExplorationGenerator
 from xopt.generators.bayesian.models.standard import StandardModelConstructor
 from xopt.numerical_optimizer import GridOptimizer
+from emitopt.utils import get_quad_strength_conversion_factor
 
 from scripts.custom_turbo import QuadScanTurbo
 
+def perform_sampling(
+    vocs, 
+    turbo_length, 
+    beamsize_evaluator,
+    dump_file,
+    generator_kwargs,
+    initial_points,
+    n_iterations,
+    quad_strength_key,
+    initial_data = None,
+):
+    # run points to determine X emittance
+    # ===================================
+    # set up Xopt object
+    turbo_controller = QuadScanTurbo(vocs, length=turbo_length)
+    model_constructor = StandardModelConstructor(use_low_noise_prior=False)
+    generator = BayesianExplorationGenerator(
+        vocs=vocs,
+        numerical_optimizer=GridOptimizer(n_grid_points=100),
+        model_constructor=model_constructor,
+        turbo_controller=turbo_controller,
+        **generator_kwargs
+    )
+
+    beamsize_evaluator = Evaluator(function=beamsize_evaluator)
+    X = Xopt(generator=generator, evaluator=beamsize_evaluator, vocs=vocs)
+    X.options.dump_file = dump_file
+    
+    # add old data if specified
+    if initial_data is not None:
+        X.add_data(initial_data)
+    
+    # evaluate initial points
+    if not initial_points is None:
+        X.evaluate_data(initial_points)
+
+    try:
+        X.step()
+    except ValueError:
+        X.random_evaluate(3)
+
+    # perform exploration
+    for i in range(n_iterations-1):
+        X.step()
+
+    # get trust region
+    tr = (
+        X.generator.turbo_controller.get_trust_region(X.generator.model)
+        .flatten()
+        .numpy()
+    )
+    tr_width = tr[1] - tr[0]
+
+    analysis_data = deepcopy(X.data).dropna()
+
+    #cut out data greater than a certain value
+    min_objective_value = float(analysis_data[vocs.objective_names[0]].min())
+    print(min_objective_value)
+    analysis_data = analysis_data[analysis_data[vocs.objective_names[0]] < 4*min_objective_value]
+
+    # get data within the trust region
+    analysis_data = analysis_data[
+        pd.DataFrame(
+            (
+                analysis_data[quad_strength_key] < tr[1] + 0.5*tr_width,
+                analysis_data[quad_strength_key] > tr[0] - 0.5*tr_width,
+            )
+        ).all()
+    ]
+
+    # return data
+    return X.data, analysis_data, X
+
+    
+
 
 def characterize_emittance(
-    vocs: VOCS,
+    xvocs: VOCS,
+    yvocs: VOCS,
     beamsize_evaluator: Callable,
     beamline_config,
     quad_strength_key: str,
     rms_x_key: str,
     rms_y_key: str,
-    initial_data: DataFrame,
+    initial_points: DataFrame,
     n_iterations: int = 5,
     turbo_length: float = 1.0,
     generator_kwargs: Dict = None,
@@ -113,113 +190,88 @@ def characterize_emittance(
     """
 
     # check for proper vocs object
-    assert quad_strength_key in vocs.variable_names
-    assert (rms_x_key in vocs.observables) and (rms_y_key in vocs.observables)
+    #assert quad_strength_key in vocs.variable_names
+    #assert (rms_x_key in vocs.observables) and (rms_y_key in vocs.observables)
 
     # set up kwarg objects
     generator_kwargs = generator_kwargs or {}
     quad_scan_analysis_kwargs = quad_scan_analysis_kwargs or {}
 
-    # set up Xopt object
-    turbo_controller = QuadScanTurbo(vocs, length=turbo_length)
-    model_constructor = StandardModelConstructor(use_low_noise_prior=False)
-    generator = BayesianExplorationGenerator(
-        vocs=vocs,
-        numerical_optimizer=GridOptimizer(n_grid_points=100),
-        model_constructor=model_constructor,
-        turbo_controller=turbo_controller,
-        **generator_kwargs
+    # perform sampling for X
+    print("sampling points for x emittance")
+    gen_data_x, analysis_x, X = perform_sampling(
+        xvocs, 
+        turbo_length, 
+        beamsize_evaluator,
+        dump_file,
+        generator_kwargs,
+        initial_points,
+        n_iterations,
+        quad_strength_key,
     )
+    print(len(gen_data_x))
 
-    beamsize_evaluator = Evaluator(function=beamsize_evaluator)
-    X = Xopt(generator=generator, evaluator=beamsize_evaluator, vocs=vocs)
-    X.options.dump_file = dump_file
-
-    # evaluate initial points
-    X.evaluate_data(initial_data)
-
-    # check to make sure the correct data is returned before performing exploration
-    assert rms_y_key in X.data.columns
-    assert rms_x_key in X.data.columns
-
-    # perform exploration
-    for i in range(n_iterations):
-        X.step()
-
-    # get trust region
-    tr = (
-        X.generator.turbo_controller.get_trust_region(X.generator.model)
-        .flatten()
-        .numpy()
+    # perform sampling for Y
+    print("sampling points for y emittance")
+    gen_data_y, analysis_y, X = perform_sampling(
+        yvocs, 
+        turbo_length, 
+        beamsize_evaluator,
+        dump_file,
+        generator_kwargs,
+        None,
+        n_iterations,
+        quad_strength_key,
+        initial_data=gen_data_x
     )
+    print(len(gen_data_y))
+    
+    analysis_data = pd.concat((analysis_x, analysis_y), ignore_index = True)
 
     try:
-        analysis_data = deepcopy(X.data)[
-            [quad_strength_key, rms_x_key, rms_y_key]
-        ].dropna()
+        analysis_data = [analysis_x, analysis_y]
+        key = [rms_x_key, rms_y_key]
+        rmat = [beamline_config.transport_matrix_x, beamline_config.transport_matrix_y]
+        name = ["x","y"]
+        
+        result = {}
+        
+        for i in range(2):
 
-        # get data within the trust region
-        analysis_data = analysis_data[
-            pd.DataFrame(
-                (
-                    analysis_data[quad_strength_key] < tr[1],
-                    analysis_data[quad_strength_key] > tr[0],
-                )
-            ).all()
-        ]
+            # get data from xopt object and scale to [m^{-2}]
+            k = (
+                analysis_data[i][quad_strength_key].to_numpy(dtype=np.double)
+                * beamline_config.pv_to_integrated_gradient * get_quad_strength_conversion_factor(beamline_config.beam_energy, beamline_config.scan_quad_length)
+            )
+            rms = analysis_data[i][key[i]].to_numpy(dtype=np.double)
 
-        # get data from xopt object and scale to [m^{-2}]
-        k = (
-            analysis_data[quad_strength_key].to_numpy(dtype=np.double)
-            * beamline_config.pv_to_integrated_gradient
-        )
-        rms_x = analysis_data[rms_x_key].to_numpy(dtype=np.double)
-        rms_y = analysis_data[rms_y_key].to_numpy(dtype=np.double)
+            rmat_quad_to_screen = torch.tensor(
+                rmat[i]
+            ).double()
+        
+            # calculate emittances (note negative sign in y-calculation)
+            stats = get_valid_emit_bmag_samples_from_quad_scan(
+                k,
+                rms,
+                beamline_config.scan_quad_length,
+                rmat_quad_to_screen,
+                beta0=beamline_config.design_beta_x,
+                alpha0=beamline_config.design_alpha_x,
+                **quad_scan_analysis_kwargs
+            )
 
-        rmat_quad_to_screen_x = torch.tensor(
-            beamline_config.transport_matrix_x
-        ).double()
-        rmat_quad_to_screen_y = torch.tensor(
-            beamline_config.transport_matrix_y
-        ).double()
 
-        # calculate emittances (note negative sign in y-calculation)
-        x_emit_stats = get_valid_emit_bmag_samples_from_quad_scan(
-            k,
-            rms_x,
-            beamline_config.scan_quad_length,
-            rmat_quad_to_screen_x,
-            beta0=beamline_config.design_beta_x,
-            alpha0=beamline_config.design_alpha_x,
-            **quad_scan_analysis_kwargs
-        )
-        y_emit_stats = get_valid_emit_bmag_samples_from_quad_scan(
-            -k,
-            rms_y,
-            beamline_config.scan_quad_length,
-            rmat_quad_to_screen_y,
-            beta0=beamline_config.design_beta_y,
-            alpha0=beamline_config.design_alpha_y,
-            **quad_scan_analysis_kwargs
-        )
-
-        # return emittance results in [mm-mrad]
-        gamma = beamline_config.beam_energy / 0.511e-3
-        result = {
-            "x_emittance": float(gamma * torch.quantile(x_emit_stats[0], 0.5)),
-            "x_emittance_05": float(gamma * torch.quantile(x_emit_stats[0], 0.05)),
-            "x_emittance_95": float(gamma * torch.quantile(x_emit_stats[0], 0.95)),
-            "x_emittance_var": float(gamma * torch.var(x_emit_stats[0])),
-            "y_emittance": float(gamma * torch.quantile(y_emit_stats[0], 0.5)),
-            "y_emittance_05": float(gamma * torch.quantile(y_emit_stats[0], 0.05)),
-            "y_emittance_95": float(gamma * torch.quantile(y_emit_stats[0], 0.95)),
-            "y_emittance_var": float(gamma * torch.var(y_emit_stats[0])),
-        }
-        if x_emit_stats[1] is not None:
-            result["bmag_x_median"] = float(torch.quantile(x_emit_stats[1], 0.5))
-        if y_emit_stats[1] is not None:
-            result["bmag_y_median"] = float(torch.quantile(y_emit_stats[1], 0.5))
-
+            # return emittance results in [mm-mrad]
+            gamma = beamline_config.beam_energy / 0.511e-3
+            result = result | {
+                f"{name[i]}_emittance": float(gamma * torch.quantile(stats[0], 0.5)),
+                f"{name[i]}_emittance_05": float(gamma * torch.quantile(stats[0], 0.05)),
+                f"{name[i]}_emittance_95": float(gamma * torch.quantile(stats[0], 0.95)),
+                f"{name[i]}_emittance_var": float(torch.var(gamma * stats[0])),
+            }
+            if stats[1] is not None:
+                result[f"bmag_{name[i]}_median"] = float(torch.quantile(stats[1], 0.5))
+       
     except Exception:
         print(traceback.format_exc())
         result = {}

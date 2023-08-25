@@ -9,6 +9,6 @@ resolution_suffix: RESOLUTION
 save_image_location: null
 screen_name: OTRS:IN20:621
 testing: false
-verbose: true
+visualize: true
 wait_time: 0.1
 beam_shutter_pv: IOC:BSY0:MP01:MSHUTCTL

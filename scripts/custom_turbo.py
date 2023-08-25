@@ -29,7 +29,7 @@ class QuadScanTurbo(OptimizeTurboController):
 
         # calculate the tr bounding box
         tr_lb = torch.clamp(
-            x_center - weights * self.length * lengthscales * bound_widths / 2.0,
+            x_center - weights * self.length * bound_widths / 2.0,
             *bounds
         )
         tr_ub = torch.clamp(
