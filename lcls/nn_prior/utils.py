@@ -179,8 +179,9 @@ def plot_model_in_2d(
         _x = gp.input_transform.transform(x)
         _x = gp.mean_module(_x)
         prior_mean = gp.outcome_transform.untransform(_x)[0]
-        posterior_mean = gp.posterior(x).mean
-        posterior_std = torch.sqrt(torch.diagonal(gp.posterior(x).mvn.covariance_matrix))
+        posterior = gp.posterior(x)
+        posterior_mean = posterior.mean
+        posterior_sd = torch.sqrt(posterior.mvn.variance)
 
     # determine feasible samples
     if "feasible_" + output_name in X.vocs.feasibility_data(X.data).columns:
@@ -193,7 +194,7 @@ def plot_model_in_2d(
     # plot data
     nrows, ncols = 2, 2
     fig, axs = plt.subplots(nrows=nrows, ncols=ncols, figsize=(10, 8))
-    z = [posterior_mean, prior_mean, posterior_std]
+    z = [posterior_mean, prior_mean, posterior_sd]
     labels = ["Posterior Mean", "Prior Mean", "Posterior SD"]
     for i in range(nrows * ncols):
         ax = axs[i // ncols, i % nrows]
