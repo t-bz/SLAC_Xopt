@@ -2,7 +2,11 @@ from copy import deepcopy
 from typing import Dict
 
 import torch
+import numpy as np
+import matplotlib.pyplot as plt
 from epics import caget_many
+
+from xopt import Xopt
 from lume_model.torch.model import PyTorchModel
 from lume_model.variables import InputVariable
 
@@ -121,3 +125,93 @@ def update_input_variables_to_transformer(
         var.value_range = [x_new["min"][i].item(), x_new["max"][i].item()]
         var.default = x_new["default"][i].item()
     return updated_variables
+
+
+def plot_model_in_2d(
+    X: Xopt,
+    output_name: str = None,
+    variable_names: tuple[str, str] = None,
+    n_grid: int = 50,
+    figsize: tuple[float, float] = (10, 8),
+) -> tuple[plt.Figure, np.ndarray]:
+    """Displays GP model predictions for selected output in 2D.
+
+    The GP model is displayed with respect to the two named input variables. If None are given,
+    the list of variables in X.vocs is used. Feasible samples are indicated with orange "+"-marks,
+    infeasible samples with red "x"-marks. Feasibility is calculated with respect to all constraints
+    unless the selected output is a constraint itself, in which case only that one is considered.
+
+    Args:
+        X: Xopt object with a Bayesian generator containing a trained GP model.
+        output_name: Selects the GP model to display.
+        variable_names: The two variables for which the model is displayed.
+          Defaults to X.vocs.variable_names.
+        n_grid: Number of grid points per dimension used to display the model predictions.
+        figsize: Size of the matplotlib figure.
+
+    Returns:
+        The matplotlib figure and axes objects.
+    """
+
+    # define output and variable names
+    if output_name is None:
+        output_name = X.vocs.output_names[0]
+    if variable_names is None:
+        variable_names = X.vocs.variable_names
+    if not len(variable_names) == 2:
+        raise ValueError(f"Number of variables should be 2, not {len(variable_names)}.")
+
+    # generate input mesh
+    x_last = X.data[X.vocs.variable_names].iloc[-1]
+    x_lim = torch.tensor([X.vocs.variables[k] for k in variable_names])
+    x_i = [torch.linspace(*x_lim[i], n_grid) for i in range(x_lim.shape[0])]
+    x_mesh = torch.meshgrid(*x_i, indexing="ij")
+    x_v = torch.hstack([ele.reshape(-1, 1) for ele in x_mesh]).double()
+    x = torch.stack(
+        [x_v[:, variable_names.index(k)] if k in variable_names else x_last[k] * torch.ones(x_v.shape[0])
+         for k in X.vocs.variable_names],
+        dim=-1,
+    )
+
+    # compute model predictions
+    gp = X.generator.model.models[X.generator.vocs.output_names.index(output_name)]
+    with torch.no_grad():
+        _x = gp.input_transform.transform(x)
+        _x = gp.mean_module(_x)
+        prior_mean = gp.outcome_transform.untransform(_x)[0]
+        posterior_mean = gp.posterior(x).mean
+        posterior_std = torch.sqrt(torch.diagonal(gp.posterior(x).mvn.covariance_matrix))
+
+    # determine feasible samples
+    if "feasible_" + output_name in X.vocs.feasibility_data(X.data).columns:
+        feasible = X.vocs.feasibility_data(X.data)["feasible_" + output_name]
+    else:
+        feasible = X.vocs.feasibility_data(X.data)["feasible"]
+    feasible_samples = X.data[variable_names][feasible]
+    infeasible_samples = X.data[variable_names][~feasible]
+
+    # plot data
+    nrows, ncols = 2, 2
+    fig, axs = plt.subplots(nrows=nrows, ncols=ncols, figsize=(10, 8))
+    z = [posterior_mean, prior_mean, posterior_std]
+    labels = ["Posterior Mean", "Prior Mean", "Posterior SD"]
+    for i in range(nrows * ncols):
+        ax = axs[i // ncols, i % nrows]
+        if i >= len(z):
+            ax.axis("off")
+        else:
+            pcm = ax.pcolormesh(*x_mesh, z[i].detach().squeeze().reshape(n_grid, n_grid))
+            if not feasible_samples.empty:
+                ax.plot(*feasible_samples.to_numpy().T, "+C1")
+            if not infeasible_samples.empty:
+                ax.plot(*infeasible_samples.to_numpy().T, "xC3")
+            ax.locator_params(axis="both", nbins=5)
+            ax.set_title(labels[i])
+            ax.set_xlabel(variable_names[0])
+            if i % nrows == 0:
+                ax.set_ylabel(variable_names[1])
+            cbar = fig.colorbar(pcm, ax=ax)
+            cbar.set_label(output_name)
+    fig.tight_layout()
+
+    return fig, axs
