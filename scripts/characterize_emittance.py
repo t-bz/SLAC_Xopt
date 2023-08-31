@@ -1,7 +1,7 @@
 import traceback
 from copy import deepcopy
 from typing import Callable, Dict
-
+import time
 import numpy as np
 
 import pandas as pd
@@ -16,87 +16,81 @@ from gpytorch.likelihoods import GaussianLikelihood
 from gpytorch.priors import GammaPrior
 from pandas import DataFrame
 from xopt import Evaluator, VOCS, Xopt
-from xopt.generators import BayesianExplorationGenerator
+from xopt.generators import UpperConfidenceBoundGenerator
 from xopt.generators.bayesian.models.standard import StandardModelConstructor
 from xopt.numerical_optimizer import GridOptimizer
 from emitopt.utils import get_quad_strength_conversion_factor
 
 from scripts.custom_turbo import QuadScanTurbo
+from scripts.utils.visualization import visualize_step
 
 def perform_sampling(
-    vocs, 
-    turbo_length, 
+    vocs,
+    turbo_length,
     beamsize_evaluator,
     dump_file,
     generator_kwargs,
     initial_points,
     n_iterations,
     quad_strength_key,
-    initial_data = None,
+    initial_data=None,
+    visualize=False
 ):
-    # run points to determine X emittance
+    # run points to determine emittance
     # ===================================
+    
     # set up Xopt object
+    # use beta to control the relative spacing between points and the observed minimum
     turbo_controller = QuadScanTurbo(vocs, length=turbo_length)
     model_constructor = StandardModelConstructor(use_low_noise_prior=False)
-    generator = BayesianExplorationGenerator(
+    generator = UpperConfidenceBoundGenerator(
         vocs=vocs,
+        beta=50.0,
         numerical_optimizer=GridOptimizer(n_grid_points=100),
         model_constructor=model_constructor,
         turbo_controller=turbo_controller,
-        **generator_kwargs
+        **generator_kwargs,
     )
 
     beamsize_evaluator = Evaluator(function=beamsize_evaluator)
     X = Xopt(generator=generator, evaluator=beamsize_evaluator, vocs=vocs)
     X.options.dump_file = dump_file
-    
+
     # add old data if specified
     if initial_data is not None:
         X.add_data(initial_data)
-    
-    # evaluate initial points
-    if not initial_points is None:
+
+    # evaluate initial points if specified
+    if initial_points is not None:
         X.evaluate_data(initial_points)
 
-    try:
-        X.step()
-    except ValueError:
-        X.random_evaluate(3)
+    if len(X.data) == 0:
+        raise RuntimeError(
+            "no data added to model during initialization, "\
+            "must specify either initial_data or initial_points"\
+            "to perform sampling"
+        )
 
+    if visualize > 1:
+        visualize_step(X.generator, f"{X.vocs.objective_names[0]}, step:{1}")
+    X.step()
+       
     # perform exploration
-    for i in range(n_iterations-1):
+    for i in range(n_iterations - 1):
+        if visualize > 1:
+            visualize_step(X.generator, f"{X.vocs.objective_names[0]}, step:{i + 2}")
         X.step()
+        
 
-    # get trust region
-    tr = (
-        X.generator.turbo_controller.get_trust_region(X.generator.model)
-        .flatten()
-        .numpy()
+    # get minimum point
+    turbo_controller = X.generator.turbo_controller
+    min_pt = (
+        turbo_controller.center_x, 
+        turbo_controller.best_value
     )
-    tr_width = tr[1] - tr[0]
-
-    analysis_data = deepcopy(X.data).dropna()
-
-    #cut out data greater than a certain value
-    min_objective_value = float(analysis_data[vocs.objective_names[0]].min())
-    print(min_objective_value)
-    analysis_data = analysis_data[analysis_data[vocs.objective_names[0]] < 4*min_objective_value]
-
-    # get data within the trust region
-    analysis_data = analysis_data[
-        pd.DataFrame(
-            (
-                analysis_data[quad_strength_key] < tr[1] + 0.5*tr_width,
-                analysis_data[quad_strength_key] > tr[0] - 0.5*tr_width,
-            )
-        ).all()
-    ]
 
     # return data
-    return X.data, analysis_data, X
-
-    
+    return X.data, min_pt, X
 
 
 def characterize_emittance(
@@ -107,11 +101,12 @@ def characterize_emittance(
     quad_strength_key: str,
     rms_x_key: str,
     rms_y_key: str,
-    initial_points: DataFrame,
+    initial_points: DataFrame = None,
+    initial_data: DataFrame = None,
     n_iterations: int = 5,
     turbo_length: float = 1.0,
     generator_kwargs: Dict = None,
-    quad_scan_analysis_kwargs: Dict = None,
+    visualize: int = 0,
     dump_file: str = None,
 ):
     """
@@ -190,66 +185,94 @@ def characterize_emittance(
     """
 
     # check for proper vocs object
-    #assert quad_strength_key in vocs.variable_names
-    #assert (rms_x_key in vocs.observables) and (rms_y_key in vocs.observables)
+    # assert quad_strength_key in vocs.variable_names
+    # assert (rms_x_key in vocs.observables) and (rms_y_key in vocs.observables)
 
     # set up kwarg objects
     generator_kwargs = generator_kwargs or {}
-    quad_scan_analysis_kwargs = quad_scan_analysis_kwargs or {}
 
     # perform sampling for X
     print("sampling points for x emittance")
-    gen_data_x, analysis_x, X = perform_sampling(
-        xvocs, 
-        turbo_length, 
+    start = time.perf_counter()
+    gen_data_x, min_pt_x, X = perform_sampling(
+        xvocs,
+        turbo_length,
         beamsize_evaluator,
         dump_file,
         generator_kwargs,
         initial_points,
         n_iterations,
         quad_strength_key,
+        initial_data=initial_data,
+        visualize=visualize,
     )
-    print(len(gen_data_x))
+    print(f"Runtime: {time.perf_counter() - start}")
 
     # perform sampling for Y
     print("sampling points for y emittance")
-    gen_data_y, analysis_y, X = perform_sampling(
-        yvocs, 
-        turbo_length, 
+    start = time.perf_counter()
+    gen_data_y, min_pt_y, X = perform_sampling(
+        yvocs,
+        turbo_length,
         beamsize_evaluator,
         dump_file,
         generator_kwargs,
         None,
         n_iterations,
         quad_strength_key,
-        initial_data=gen_data_x
+        initial_data=gen_data_x,
+        visualize=visualize,
     )
-    print(len(gen_data_y))
-    
-    analysis_data = pd.concat((analysis_x, analysis_y), ignore_index = True)
+    print(f"Runtime: {time.perf_counter() - start}")
 
+    # get subset of data for analysis, drop Nan measurements
+    analysis_data = gen_data_y[[quad_strength_key, rms_x_key, rms_y_key]].dropna().iloc[5:]
+    
     try:
-        analysis_data = [analysis_x, analysis_y]
         key = [rms_x_key, rms_y_key]
         rmat = [beamline_config.transport_matrix_x, beamline_config.transport_matrix_y]
-        name = ["x","y"]
+        name = ["x", "y"]
+        minimum_pts = [min_pt_x, min_pt_y]
+        quad_strength_conversion_factor = get_quad_strength_conversion_factor(
+            beamline_config.beam_energy, beamline_config.scan_quad_length
+        )
         
         result = {}
-        
-        for i in range(2):
 
+        for i in range(2):
+            # make a copy of the analysis data
+            data = deepcopy(analysis_data)
+
+            # window data via a fixed width around the minimum point
+            min_loc =  minimum_pts[i][0][quad_strength_key]
+            width = 20
+            data = data[
+               pd.DataFrame(
+                   (
+                       data[quad_strength_key] < min_loc + width / 2,
+                       data[quad_strength_key] > min_loc - width / 2,
+                   )
+               ).all()
+            ]
+
+            # window data via a fixed multiple of the minimum value
+            min_multiplier = 2
+            max_val = minimum_pts[i][1] * min_multiplier
+            data = data[data[key[i]] < max_val]
+    
             # get data from xopt object and scale to [m^{-2}]
             k = (
-                analysis_data[i][quad_strength_key].to_numpy(dtype=np.double)
-                * beamline_config.pv_to_integrated_gradient * get_quad_strength_conversion_factor(beamline_config.beam_energy, beamline_config.scan_quad_length)
+                data[quad_strength_key].to_numpy(dtype=np.double)
+                * beamline_config.pv_to_integrated_gradient
             )
-            rms = analysis_data[i][key[i]].to_numpy(dtype=np.double)
+            rms = data[key[i]].to_numpy(dtype=np.double)
 
-            rmat_quad_to_screen = torch.tensor(
-                rmat[i]
-            ).double()
-        
+            # get transport matrix from quad to screen
+            rmat_quad_to_screen = torch.tensor(rmat[i]).double()
+
             # calculate emittances (note negative sign in y-calculation)
+            print(f"creating emittance fit {name[i]}")
+            start = time.perf_counter()
             stats = get_valid_emit_bmag_samples_from_quad_scan(
                 k,
                 rms,
@@ -257,21 +280,25 @@ def characterize_emittance(
                 rmat_quad_to_screen,
                 beta0=beamline_config.design_beta_x,
                 alpha0=beamline_config.design_alpha_x,
-                **quad_scan_analysis_kwargs
+                visualize=visualize > 0,
             )
-
+            print(f"Runtime: {time.perf_counter() - start}")
 
             # return emittance results in [mm-mrad]
             gamma = beamline_config.beam_energy / 0.511e-3
             result = result | {
                 f"{name[i]}_emittance": float(gamma * torch.quantile(stats[0], 0.5)),
-                f"{name[i]}_emittance_05": float(gamma * torch.quantile(stats[0], 0.05)),
-                f"{name[i]}_emittance_95": float(gamma * torch.quantile(stats[0], 0.95)),
+                f"{name[i]}_emittance_05": float(
+                    gamma * torch.quantile(stats[0], 0.05)
+                ),
+                f"{name[i]}_emittance_95": float(
+                    gamma * torch.quantile(stats[0], 0.95)
+                ),
                 f"{name[i]}_emittance_var": float(torch.var(gamma * stats[0])),
             }
             if stats[1] is not None:
                 result[f"bmag_{name[i]}_median"] = float(torch.quantile(stats[1], 0.5))
-       
+
     except Exception:
         print(traceback.format_exc())
         result = {}
@@ -633,7 +660,7 @@ def fit_gp_quad_scan(
         input_transform=Normalize(1),
         outcome_transform=Standardize(1),
         likelihood=GaussianLikelihood(
-            noise_prior=GammaPrior(0.5, 1.0),
+            noise_prior=GammaPrior(1.0, 1.0),
         ),
     )
     mll = ExactMarginalLogLikelihood(model.likelihood, model)

@@ -29,7 +29,7 @@ class BeamlineConfig(BaseModel):
     transport_matrix_y: List[List]
 
     # beam parameters
-    beam_energy: PositiveFloat # in GeV
+    beam_energy: PositiveFloat  # in GeV
 
     # design twiss for matching calculation
     design_beta_x: float = None
@@ -66,7 +66,7 @@ class BaseEmittanceMeasurement(BaseModel, ABC):
     run_dir: str = os.getcwd()
     secondary_observables: list = []
     constants: dict = {}
-    visualize: bool = False
+    visualize: int = 0
     _dump_file: str = None
 
     class Config:
@@ -91,9 +91,11 @@ class BaseEmittanceMeasurement(BaseModel, ABC):
     def y_measurement_vocs(self):
         pass
 
-    @abstractmethod
     def get_initial_points(self):
-        pass
+        return None
+
+    def get_initial_data(self):
+        return None
 
     def dump_yaml(self, fname=None):
         """dump data to file"""
@@ -114,6 +116,12 @@ class BaseEmittanceMeasurement(BaseModel, ABC):
             self.run_dir, f"emittance_characterize_{int(time())}.yml"
         )
 
+        # generate initial points
+        initial_points = self.get_initial_points()
+
+        # generate initial data
+        initial_data = self.get_initial_data()
+
         # run scan
         emit_results, emit_Xopt = characterize_emittance(
             self.x_measurement_vocs,
@@ -123,91 +131,20 @@ class BaseEmittanceMeasurement(BaseModel, ABC):
             quad_strength_key=self.beamline_config.scan_quad_pv,
             rms_x_key="S_x_mm",
             rms_y_key="S_y_mm",
-            initial_points=self.get_initial_points(),
+            initial_points=initial_points,
+            initial_data=initial_data,
             n_iterations=self.n_iterations,
             turbo_length=self.turbo_length,
-            quad_scan_analysis_kwargs={"visualize": self.visualize},
+            visualize=self.visualize,
             dump_file=self.dump_file,
         )
-        
+
+        # add self info to dump file
+        info = yaml.safe_load(open(self.dump_file))
+        info = info | {"emittance_measurement": self.dict()}
+
+        with open(self.dump_file, "w") as f:
+            yaml.dump(info, f)
 
         return emit_results, emit_Xopt
 
-
-class ScreenEmittanceMeasurement(BaseEmittanceMeasurement):
-    image_diagnostic: ImageDiagnostic
-    minimum_log_intensity: PositiveFloat = 4.0
-    n_shots: PositiveInt = 3
-
-    def eval_beamsize(self, inputs):
-        # set PVs
-        for k, v in inputs.items():
-            print(f"CAPUT {k} {v}")
-            caput(k, v)
-
-        sleep(self.wait_time)
-
-        # get beam sizes from image diagnostic
-        results = self.image_diagnostic.measure_beamsize(self.n_shots, **inputs)
-        results["S_x_mm"] = np.array(results["Sx"]) * 1e-3
-        results["S_y_mm"] = np.array(results["Sy"]) * 1e-3
-
-        # get other PV's NOTE: Measurements not synchronous with beamsize measurements!
-        results = results | dict(
-            zip(self.secondary_observables, caget_many(self.secondary_observables))
-        )
-
-        # add total beam size
-        results["total_size"] = np.sqrt(
-            np.array(results["Sx"]) ** 2 + np.array(results["Sy"]) ** 2
-        )
-        return results
-
-    @property
-    def base_vocs(self):
-        IMAGE_CONSTRAINTS = {
-            "bb_penalty": ["LESS_THAN", 0.0],
-            "log10_total_intensity": ["GREATER_THAN", self.minimum_log_intensity],
-        }
-
-        # create measurement vocs
-        base_vocs = VOCS(
-            variables={
-                self.beamline_config.scan_quad_pv: self.beamline_config.scan_quad_range
-            },
-            constraints=IMAGE_CONSTRAINTS,
-            observables=["S_x_mm","S_y_mm"],
-            constants=self.constants,
-        )
-
-        return base_vocs
-        
-
-    @property
-    def x_measurement_vocs(self):
-        vocs = deepcopy(self.base_vocs)  
-        vocs.objectives={"S_x_mm":"MINIMIZE"}
-
-        return vocs
-
-    @property
-    def y_measurement_vocs(self):
-        vocs = deepcopy(self.base_vocs)   
-        vocs.objectives={"S_y_mm":"MINIMIZE"}
-
-        return vocs
-
-
-    def get_initial_points(self):
-        # grab current point
-        current_val = {
-            self.beamline_config.scan_quad_pv: caget(self.beamline_config.scan_quad_pv)
-        }
-        init_point = pd.DataFrame(current_val, index=[0])
-        # append two random points
-        init_point = pd.concat(
-            (
-                init_point, pd.DataFrame(self.x_measurement_vocs.random_inputs(2))
-            ), ignore_index=True)
-        
-        return init_point

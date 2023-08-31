@@ -97,6 +97,16 @@ class ImageDiagnostic(BaseModel):
             outputs = pd.DataFrame(results).reset_index().to_dict(orient="list")
             outputs.pop("index")
 
+            # if the number of nans is greater than half but less than all of 
+            # the number of shots this could be an inconsistent measurement -- raise a warning
+            n_nans = outputs["Sx"].isna().sum()
+            if n_nans > n_shots / 2 or n_nans < n_shots:
+                warning.warn(
+                    "The number of invalid measurements is greater than half the" + \
+                    "number of shots but is not all of the measurements." + \
+                    "This could indicate consistency issues in the measurement."
+                )
+
             # create numpy arrays from lists
             outputs = {key: list(np.array(ele)) for key, ele in outputs.items()}
 
@@ -180,10 +190,6 @@ class ImageDiagnostic(BaseModel):
         img = img - self.background_image
         img = np.where(img >= 0, img, 0)
 
-        # apply threshold
-        img = img - self.threshold
-        img = np.where(img >= 0, img, 0)
-
         # crop image if specified
         if self.roi is not None:
             img = self.roi.crop_image(img)
@@ -192,7 +198,9 @@ class ImageDiagnostic(BaseModel):
 
     def measure_background(self, n_measurements: int = 5, file_location: str = None):
         file_location = file_location or ""
-        filename = f"{file_location}{self.screen_name}_background.npy".replace(":", "_")
+        filename = os.path.join(
+            file_location, f"{self.screen_name}_background.npy".replace(":", "_")
+        )
         # insert shutter
         if self.beam_shutter_pv is not None:
             old_shutter_state = caget(self.beam_shutter_pv)
@@ -221,79 +229,103 @@ class ImageDiagnostic(BaseModel):
         roi_c = np.array(img.shape) / 2
         roi_radius = np.min((roi_c * 2, np.array(img.shape))) / 2
 
-        fits = self.fit_image(img)
-        centroid = fits["centroid"]
-        sizes = fits["rms_sizes"]
+        # apply threshold
+        img = img - self.threshold
+        img = np.where(img >= 0, img, 0)
 
-        if np.all(np.stack((centroid, sizes)) != np.NaN):
-            # get beam region bounding box
-            n_stds = self.bounding_box_half_width
-            pts = np.array(
-                (
-                    centroid - n_stds * sizes,
-                    centroid + n_stds * sizes,
-                    centroid - n_stds * sizes * np.array((-1, 1)),
-                    centroid + n_stds * sizes * np.array((-1, 1)),
-                )
-            )
-
-            # visualization
-            if self.visualize:
-                fig, ax = plt.subplots()
-                c = ax.imshow(img, origin="lower")
-                ax.plot(*centroid, "+r")
-                ax.plot(*roi_c[::-1], ".r")
-                fig.colorbar(c)
-
-                rect = patches.Rectangle(
-                    pts[0], *sizes * n_stds * 2.0, facecolor="none", edgecolor="r"
-                )
-                ax.add_patch(rect)
-
-                circle = patches.Circle(
-                    roi_c[::-1], roi_radius, facecolor="none", edgecolor="r"
-                )
-                ax.add_patch(circle)
-
-            distances = np.linalg.norm(pts - roi_c, axis=1)
-
-            # subtract radius to get penalty value
-            bb_penalty = np.max(distances) - roi_radius
+        # if image is below min intensity threshold avoid fitting
+        log10_total_intensity = np.log10(img.sum())
+        if log10_total_intensity < self.min_log_intensity:
+            result = {
+                "Cx": np.NaN,
+                "Cy": np.NaN,
+                "Sx": np.NaN,
+                "Sy": np.NaN,
+                "bb_penalty": np.NaN,
+                "total_intensity": 10**log10_total_intensity,
+                "log10_total_intensity": log10_total_intensity,
+            }
+            return result
 
         else:
-            bb_penalty = np.NaN
+            print("fitting image")
+            fits = self.fit_image(img)
+            centroid = fits["centroid"]
+            sizes = fits["rms_sizes"]
 
-        log10_total_intensity = fits["log10_total_intensity"]
+            # do analysis if fits return all good values
+            if np.all(~np.isnan(np.stack((centroid, sizes)))):
+                # get beam region bounding box
+                n_stds = self.bounding_box_half_width
+                pts = np.array(
+                    (
+                        centroid - n_stds * sizes,
+                        centroid + n_stds * sizes,
+                        centroid - n_stds * sizes * np.array((-1, 1)),
+                        centroid + n_stds * sizes * np.array((-1, 1)),
+                    )
+                )
 
-        result = {
-            "Cx": centroid[0],
-            "Cy": centroid[1],
-            "Sx": sizes[0],
-            "Sy": sizes[1],
-            "bb_penalty": bb_penalty,
-            "total_intensity": fits["total_intensity"],
-            "log10_total_intensity": log10_total_intensity,
-        }
+                # visualization
+                if self.visualize:
+                    fig, ax = plt.subplots()
+                    c = ax.imshow(img, origin="lower")
+                    ax.plot(*centroid, "+r")
+                    ax.plot(*roi_c[::-1], ".r")
+                    fig.colorbar(c)
 
-        # set results to none if the beam extends beyond the roi or
-        # if the intensity is not greater than a minimum
-        if bb_penalty > 0 or log10_total_intensity < self.min_log_intensity:
-            for name in ["Cx", "Cy", "Sx", "Sy"]:
-                result[name] = np.NaN
+                    rect = patches.Rectangle(
+                        pts[0], *sizes * n_stds * 2.0, facecolor="none", edgecolor="r"
+                    )
+                    ax.add_patch(rect)
 
-        # set bb penalty to None if there is no beam
-        if log10_total_intensity < self.min_log_intensity:
-            result["bb_penalty"] = np.NaN
+                    circle = patches.Circle(
+                        roi_c[::-1], roi_radius, facecolor="none", edgecolor="r"
+                    )
+                    ax.add_patch(circle)
 
-        return result
+                distances = np.linalg.norm(pts - roi_c, axis=1)
+
+                # subtract radius to get penalty value
+                bb_penalty = np.max(distances) - roi_radius
+
+                log10_total_intensity = fits["log10_total_intensity"]
+
+                result = {
+                    "Cx": centroid[0],
+                    "Cy": centroid[1],
+                    "Sx": sizes[0],
+                    "Sy": sizes[1],
+                    "bb_penalty": bb_penalty,
+                    "total_intensity": fits["total_intensity"],
+                    "log10_total_intensity": log10_total_intensity,
+                }
+
+                # set results to none if the beam extends beyond the roi
+                if bb_penalty > 0:
+                    for name in ["Cx", "Cy", "Sx", "Sy"]:
+                        result[name] = np.NaN
+
+            else:
+                result = {
+                    "Cx": np.NaN,
+                    "Cy": np.NaN,
+                    "Sx": np.NaN,
+                    "Sy": np.NaN,
+                    "bb_penalty": np.NaN,
+                    "total_intensity": fits["total_intensity"],
+                    "log10_total_intensity": log10_total_intensity,
+                }
+
+            return result
 
     def fit_image(self, img):
         x_projection = np.sum(img, axis=0)
         y_projection = np.sum(img, axis=1)
 
         # subtract min value from projections
-        x_projection = x_projection - x_projection.min()
-        y_projection = y_projection - y_projection.min()
+        x_projection = x_projection - x_projection[:10].min()
+        y_projection = y_projection - y_projection[:10].min()
 
         para_x = fit_gaussian_linear_background(
             x_projection, visualize=self.visualize, n_restarts=self.n_fitting_restarts

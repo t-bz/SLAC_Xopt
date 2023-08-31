@@ -4,7 +4,7 @@ import torch
 from botorch.models import ModelListGP
 from pandas import DataFrame
 from xopt.generators.bayesian.turbo import OptimizeTurboController
-
+import warnings
 
 class QuadScanTurbo(OptimizeTurboController):
     def get_trust_region(self, model: ModelListGP):
@@ -28,13 +28,12 @@ class QuadScanTurbo(OptimizeTurboController):
         weights = lengthscales / torch.prod(lengthscales) ** (1 / self.dim)
 
         # calculate the tr bounding box
+        width = weights * self.length * bound_widths / 2.0
         tr_lb = torch.clamp(
-            x_center - weights * self.length * bound_widths / 2.0,
-            *bounds
+            x_center - width, *bounds
         )
         tr_ub = torch.clamp(
-            x_center + weights * self.length * lengthscales * bound_widths / 2.0,
-            *bounds
+            x_center + width, *bounds
         )
         return torch.cat((tr_lb, tr_ub), dim=0)
 
@@ -71,33 +70,36 @@ class QuadScanTurbo(OptimizeTurboController):
             self._set_best_point(data[feas_data["feasible"]])
 
     def _set_best_point(self, data):
-        # aggregate data to get the mean value
-        mean_pivot_table = pd.pivot_table(
-            data,
-            values=self.vocs.objective_names[0],
-            columns=self.vocs.variable_names,
-            aggfunc=np.mean,
-        )
-
-        # only use points that have enough data
-        min_n_points = 2
-        list_pivot_table = pd.pivot_table(
-            data,
-            values=self.vocs.objective_names[0],
-            columns=self.vocs.variable_names,
-            aggfunc=list,
-        )
-        valid_points = []
-        for name, val in list_pivot_table.to_dict().items():
-            if (
-                np.count_nonzero(~np.isnan(np.array(val[self.vocs.objective_names[0]])))
-                >= min_n_points
-            ):
-                valid_points += [name]
-
-        mean_pivot_table = mean_pivot_table[valid_points].T
-
-        # get location and value of best (mean) point so far
-        best_idx = mean_pivot_table.to_numpy().argmin()
-        self.center_x = {mean_pivot_table.index.name: mean_pivot_table.index[best_idx]}
-        self.best_value = mean_pivot_table.to_numpy().min()
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+        
+            # aggregate data to get the mean value
+            mean_pivot_table = pd.pivot_table(
+                data,
+                values=self.vocs.objective_names[0],
+                columns=self.vocs.variable_names,
+                aggfunc=np.mean,
+            )
+    
+            # only use points that have enough data
+            # min_n_points = 2
+            # list_pivot_table = pd.pivot_table(
+            #     data,
+            #     values=self.vocs.objective_names[0],
+            #     columns=self.vocs.variable_names,
+            #     aggfunc=list,
+            # )
+            # valid_points = []
+            # for name, val in list_pivot_table.to_dict().items():
+            #     if (
+            #         np.count_nonzero(~np.isnan(np.array(val[self.vocs.objective_names[0]])))
+            #         >= min_n_points
+            #     ):
+            #         valid_points += [name]
+    
+            mean_pivot_table = mean_pivot_table.T
+    
+            # get location and value of best (mean) point so far
+            best_idx = mean_pivot_table.to_numpy().argmin()
+            self.center_x = {mean_pivot_table.index.name: mean_pivot_table.index[best_idx]}
+            self.best_value = mean_pivot_table.to_numpy().min()

@@ -48,7 +48,7 @@ def fit_gaussian_linear_background(y, inital_guess=None, visualize=True, n_resta
     sigma_min = 2.0
 
     # specify initial guesses if not provided in initial_guess
-    smoothed_y = np.clip(gaussian_filter(y, 5), 0, np.inf)
+    smoothed_y = np.clip(gaussian_filter(y, 3), 0, np.inf)
 
     pk_value = np.max(smoothed_y)
     pk_loc = np.argmax(smoothed_y)
@@ -75,7 +75,7 @@ def fit_gaussian_linear_background(y, inital_guess=None, visualize=True, n_resta
     bounds = torch.tensor(
         (
             (pk_value / 2.0, max(center - width / 4, 0), sigma_min, -1000.0),
-            (pk_value * 1.5, center + width / 4, y.shape[0] * 3, 1000.0),
+            (pk_value * 1.5, min(center + width / 4, width), width, 1000.0),
         )
     )
 
@@ -84,20 +84,41 @@ def fit_gaussian_linear_background(y, inital_guess=None, visualize=True, n_resta
 
     # create LSQ model
     model = GaussianLeastSquares(torch.tensor(x), torch.tensor(y))
+    smoothed_model = GaussianLeastSquares(torch.tensor(x), torch.tensor(smoothed_y))
 
-    candidates, values = gen_candidates_scipy(
+    # fit smoothed model to get better initial points
+    scandidates, svalues = gen_candidates_scipy(
         para0,
-        model.forward,
+        smoothed_model.forward,
         lower_bounds=bounds[0],
         upper_bounds=bounds[1],
-        options={"maxiter": 100},
+        options={"maxiter": 50},
+    )
+
+    # fit regular model to refine
+    candidates, values = gen_candidates_scipy(
+        scandidates,
+        smoothed_model.forward,
+        lower_bounds=bounds[0],
+        upper_bounds=bounds[1],
+        options={"maxiter": 50},
     )
 
     # in some cases the fit will return a sigma value of 2.0
+    # or an amplitude that is within the noise
     # drop these from candidates
-    condition = candidates[:, -2] > sigma_min * 1.5
+    # print(candidates)
+    indiv_condition = torch.stack((
+        candidates[:, -2] > sigma_min * 1.1, 
+        candidates[:, -2] < width / 1.5,
+        candidates[:, 0] > 100))
+    # print(indiv_condition)
+    
+    condition = torch.all(indiv_condition,dim=0)
+    # print(condition)
     valid_candidates = candidates[condition]
     valid_values = values[condition]
+
 
     if len(valid_candidates) > 0:
         # get best valid from restarts
@@ -124,7 +145,7 @@ def plot_fit(x, y, para_x):
     """
     fig, ax = plt.subplots(figsize=(7, 5))
 
-    ax.plot(x, y, "b-", label="data")
+    ax.plot(x, y, label="data")
     ax.plot(
         x,
         gaussian_linear_background(x, *para_x),
