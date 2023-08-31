@@ -131,8 +131,9 @@ def plot_model_in_2d(
     X: Xopt,
     output_name: str = None,
     variable_names: tuple[str, str] = None,
-    n_grid: int = 50,
+    n_grid: int = 100,
     figsize: tuple[float, float] = (10, 8),
+    show_samples: bool = True,
 ) -> tuple[plt.Figure, np.ndarray]:
     """Displays GP model predictions for selected output in 2D.
 
@@ -148,6 +149,7 @@ def plot_model_in_2d(
           Defaults to X.vocs.variable_names.
         n_grid: Number of grid points per dimension used to display the model predictions.
         figsize: Size of the matplotlib figure.
+        show_samples: Determines whether samples are shown.
 
     Returns:
         The matplotlib figure and axes objects.
@@ -202,10 +204,11 @@ def plot_model_in_2d(
             ax.axis("off")
         else:
             pcm = ax.pcolormesh(*x_mesh, z[i].detach().squeeze().reshape(n_grid, n_grid))
-            if not feasible_samples.empty:
-                ax.plot(*feasible_samples.to_numpy().T, "+C1")
-            if not infeasible_samples.empty:
-                ax.plot(*infeasible_samples.to_numpy().T, "xC3")
+            if show_samples:
+                if not feasible_samples.empty:
+                    ax.plot(*feasible_samples.to_numpy().T, "+C1")
+                if not infeasible_samples.empty:
+                    ax.plot(*infeasible_samples.to_numpy().T, "xC3")
             ax.locator_params(axis="both", nbins=5)
             ax.set_title(labels[i])
             ax.set_xlabel(variable_names[0])
