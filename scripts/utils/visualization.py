@@ -32,6 +32,7 @@ def visualize_step(generator, title=""):
     # plot model and acquisition function
     n_outputs = vocs.n_outputs
     fig, ax = plt.subplots(n_outputs+1, 1, sharex="all")
+    fig.set_size_inches(6, 10)
 
     # plot model posterior
     for i in range(n_outputs):

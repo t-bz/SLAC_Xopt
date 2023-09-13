@@ -99,13 +99,13 @@ class ImageDiagnostic(BaseModel):
 
             # if the number of nans is greater than half but less than all of 
             # the number of shots this could be an inconsistent measurement -- raise a warning
-            n_nans = outputs["Sx"].isna().sum()
-            if n_nans > n_shots / 2 or n_nans < n_shots:
-                warning.warn(
-                    "The number of invalid measurements is greater than half the" + \
-                    "number of shots but is not all of the measurements." + \
-                    "This could indicate consistency issues in the measurement."
-                )
+            #n_nans = np.array(outputs["Sx"]).isna().sum()
+            #if n_nans > n_shots / 2 or n_nans < n_shots:
+            #    warning.warn(
+            #        "The number of invalid measurements is greater than half the" + \
+            #        "number of shots but is not all of the measurements." + \
+            #        "This could indicate consistency issues in the measurement."
+            #    )
 
             # create numpy arrays from lists
             outputs = {key: list(np.array(ele)) for key, ele in outputs.items()}
@@ -198,6 +198,7 @@ class ImageDiagnostic(BaseModel):
 
     def measure_background(self, n_measurements: int = 5, file_location: str = None):
         file_location = file_location or ""
+
         filename = os.path.join(
             file_location, f"{self.screen_name}_background.npy".replace(":", "_")
         )
@@ -236,6 +237,8 @@ class ImageDiagnostic(BaseModel):
         # if image is below min intensity threshold avoid fitting
         log10_total_intensity = np.log10(img.sum())
         if log10_total_intensity < self.min_log_intensity:
+            print(f"log10 image intensity {log10_total_intensity} below threshold")
+
             result = {
                 "Cx": np.NaN,
                 "Cy": np.NaN,

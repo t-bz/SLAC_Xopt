@@ -1,9 +1,11 @@
 import json
 import os
 from abc import ABC, abstractmethod
-from time import sleep, time
+from time import sleep
+import time
 from typing import Callable, Dict, List
 from copy import deepcopy
+import traceback
 
 import numpy as np
 import pandas as pd
@@ -41,7 +43,7 @@ class BeamlineConfig(BaseModel):
     def pv_to_focusing_strength(self):
         """
         returns a scale factor that translates pv values to geometric focusing
-        strength
+        strength in m^{-2}
         """
         int_grad_to_geo_focusing_strength = get_quad_strength_conversion_factor(
             self.beam_energy, self.scan_quad_length
@@ -113,38 +115,54 @@ class BaseEmittanceMeasurement(BaseModel, ABC):
             os.mkdir(self.run_dir)
 
         self._dump_file = os.path.join(
-            self.run_dir, f"emittance_characterize_{int(time())}.yml"
+            self.run_dir, f"emittance_characterize_{int(time.time())}.yml"
         )
 
         # generate initial points
+        print("getting initial points to measure")
         initial_points = self.get_initial_points()
+        #print(initial_points)
 
         # generate initial data
+        print("getting initial data")
+        start = time.perf_counter()
         initial_data = self.get_initial_data()
+        print(f"initial data gathering took: {time.perf_counter() - start} s")
 
+        # get old setting
+        old_pv_value = caget(self.beamline_config.scan_quad_pv)
+
+        
         # run scan
-        emit_results, emit_Xopt = characterize_emittance(
-            self.x_measurement_vocs,
-            self.y_measurement_vocs,
-            self.eval_beamsize,
-            self.beamline_config,
-            quad_strength_key=self.beamline_config.scan_quad_pv,
-            rms_x_key="S_x_mm",
-            rms_y_key="S_y_mm",
-            initial_points=initial_points,
-            initial_data=initial_data,
-            n_iterations=self.n_iterations,
-            turbo_length=self.turbo_length,
-            visualize=self.visualize,
-            dump_file=self.dump_file,
-        )
+        try:
+            emit_results, emit_Xopt = characterize_emittance(
+                self.x_measurement_vocs,
+                self.y_measurement_vocs,
+                self.eval_beamsize,
+                self.beamline_config,
+                quad_strength_key=self.beamline_config.scan_quad_pv,
+                rms_x_key="S_x_mm",
+                rms_y_key="S_y_mm",
+                initial_points=initial_points,
+                initial_data=initial_data,
+                n_iterations=self.n_iterations,
+                turbo_length=self.turbo_length,
+                visualize=self.visualize,
+                dump_file=self.dump_file,
+            )
+    
+            # add self info to dump file
+            info = yaml.safe_load(open(self.dump_file))
+            info = info | {"emittance_measurement": self.dict()}
+    
+            with open(self.dump_file, "w") as f:
+                yaml.dump(info, f)
 
-        # add self info to dump file
-        info = yaml.safe_load(open(self.dump_file))
-        info = info | {"emittance_measurement": self.dict()}
-
-        with open(self.dump_file, "w") as f:
-            yaml.dump(info, f)
-
+        except Exception:
+            print(traceback.format_exc())
+        finally:
+            caput(self.beamline_config.scan_quad_pv,old_pv_value)
+        
         return emit_results, emit_Xopt
+        
 

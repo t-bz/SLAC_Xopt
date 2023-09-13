@@ -45,7 +45,7 @@ def perform_sampling(
     model_constructor = StandardModelConstructor(use_low_noise_prior=False)
     generator = UpperConfidenceBoundGenerator(
         vocs=vocs,
-        beta=50.0,
+        beta=100.0,
         numerical_optimizer=GridOptimizer(n_grid_points=100),
         model_constructor=model_constructor,
         turbo_controller=turbo_controller,
@@ -225,86 +225,106 @@ def characterize_emittance(
     )
     print(f"Runtime: {time.perf_counter() - start}")
 
+    return analyze_data(
+        gen_data_y, 
+        beamline_config, 
+        quad_strength_key, 
+        rms_x_key, 
+        rms_y_key,
+        [min_pt_x, min_pt_y],
+        visualize
+    ), X
+
+
+def analyze_data(
+    analysis_data, 
+    beamline_config, 
+    quad_strength_key, 
+    rms_x_key, 
+    rms_y_key, 
+    minimum_pts, 
+    visualize
+):
     # get subset of data for analysis, drop Nan measurements
-    analysis_data = gen_data_y[[quad_strength_key, rms_x_key, rms_y_key]].dropna().iloc[5:]
+    analysis_data = deepcopy(analysis_data)[
+        [quad_strength_key, rms_x_key, rms_y_key]
+    ].dropna()
     
-    try:
-        key = [rms_x_key, rms_y_key]
-        rmat = [beamline_config.transport_matrix_x, beamline_config.transport_matrix_y]
-        name = ["x", "y"]
-        minimum_pts = [min_pt_x, min_pt_y]
-        quad_strength_conversion_factor = get_quad_strength_conversion_factor(
-            beamline_config.beam_energy, beamline_config.scan_quad_length
+
+    key = [rms_x_key, rms_y_key]
+    rmat = [beamline_config.transport_matrix_x, beamline_config.transport_matrix_y]
+    name = ["x", "y"]
+    beta0 = [beamline_config.design_beta_x, beamline_config.design_beta_y]
+    alpha0 = [beamline_config.design_alpha_x, beamline_config.design_alpha_y]
+    
+    result = {}
+
+    for i in range(2):
+        # make a copy of the analysis data
+        data = deepcopy(analysis_data)
+
+        # window data via a fixed width around the minimum point
+        min_loc =  minimum_pts[i][0][quad_strength_key]
+        width = 2.5
+        data = data[
+           pd.DataFrame(
+               (
+                   data[quad_strength_key] < min_loc + width / 2,
+                   data[quad_strength_key] > min_loc - width / 2,
+               )
+           ).all()
+        ]
+
+        # window data via a fixed multiple of the minimum value
+        min_multiplier = 2
+        max_val = minimum_pts[i][1] * min_multiplier
+        data = data[data[key[i]] < max_val]
+
+        # get data from xopt object and scale to [m^{-2}]
+        k = (
+            data[quad_strength_key].to_numpy(dtype=np.double)
+            * beamline_config.pv_to_focusing_strength
         )
         
-        result = {}
+        # flip sign of focusing strengths for y
+        if name[i] == "y":
+            k = -k
+        
+        rms = data[key[i]].to_numpy(dtype=np.double)
 
-        for i in range(2):
-            # make a copy of the analysis data
-            data = deepcopy(analysis_data)
+        # get transport matrix from quad to screen
+        rmat_quad_to_screen = torch.tensor(rmat[i]).double()
 
-            # window data via a fixed width around the minimum point
-            min_loc =  minimum_pts[i][0][quad_strength_key]
-            width = 20
-            data = data[
-               pd.DataFrame(
-                   (
-                       data[quad_strength_key] < min_loc + width / 2,
-                       data[quad_strength_key] > min_loc - width / 2,
-                   )
-               ).all()
-            ]
+        # calculate emittances (note negative sign in y-calculation)
+        print(f"creating emittance fit {name[i]}")
+        start = time.perf_counter()
+        stats = get_valid_emit_bmag_samples_from_quad_scan(
+            k,
+            rms,
+            beamline_config.scan_quad_length,
+            rmat_quad_to_screen,
+            beta0=beta0[i],
+            alpha0=alpha0[i],
+            visualize=visualize > 0,
+        )
+        print(f"Runtime: {time.perf_counter() - start}")
 
-            # window data via a fixed multiple of the minimum value
-            min_multiplier = 2
-            max_val = minimum_pts[i][1] * min_multiplier
-            data = data[data[key[i]] < max_val]
-    
-            # get data from xopt object and scale to [m^{-2}]
-            k = (
-                data[quad_strength_key].to_numpy(dtype=np.double)
-                * beamline_config.pv_to_integrated_gradient
-            )
-            rms = data[key[i]].to_numpy(dtype=np.double)
+        # return emittance results in [mm-mrad]
+        gamma = beamline_config.beam_energy / 0.511e-3
+        result = result | {
+            f"{name[i]}_emittance": float(gamma * torch.quantile(stats[0], 0.5)),
+            f"{name[i]}_emittance_05": float(
+                gamma * torch.quantile(stats[0], 0.05)
+            ),
+            f"{name[i]}_emittance_95": float(
+                gamma * torch.quantile(stats[0], 0.95)
+            ),
+            f"{name[i]}_emittance_var": float(torch.var(gamma * stats[0])),
+        }
+        if stats[1] is not None:
+            result[f"bmag_{name[i]}_median"] = float(torch.quantile(stats[1], 0.5))
 
-            # get transport matrix from quad to screen
-            rmat_quad_to_screen = torch.tensor(rmat[i]).double()
-
-            # calculate emittances (note negative sign in y-calculation)
-            print(f"creating emittance fit {name[i]}")
-            start = time.perf_counter()
-            stats = get_valid_emit_bmag_samples_from_quad_scan(
-                k,
-                rms,
-                beamline_config.scan_quad_length,
-                rmat_quad_to_screen,
-                beta0=beamline_config.design_beta_x,
-                alpha0=beamline_config.design_alpha_x,
-                visualize=visualize > 0,
-            )
-            print(f"Runtime: {time.perf_counter() - start}")
-
-            # return emittance results in [mm-mrad]
-            gamma = beamline_config.beam_energy / 0.511e-3
-            result = result | {
-                f"{name[i]}_emittance": float(gamma * torch.quantile(stats[0], 0.5)),
-                f"{name[i]}_emittance_05": float(
-                    gamma * torch.quantile(stats[0], 0.05)
-                ),
-                f"{name[i]}_emittance_95": float(
-                    gamma * torch.quantile(stats[0], 0.95)
-                ),
-                f"{name[i]}_emittance_var": float(torch.var(gamma * stats[0])),
-            }
-            if stats[1] is not None:
-                result[f"bmag_{name[i]}_median"] = float(torch.quantile(stats[1], 0.5))
-
-    except Exception:
-        print(traceback.format_exc())
-        result = {}
-
-    finally:
-        return result, X
+    return result
 
 
 from emitopt.utils import build_quad_rmat, plot_valid_thick_quad_fits, propagate_sig
@@ -650,7 +670,7 @@ def fit_gp_quad_scan(
 
     if covar_module is None:
         covar_module = ScaleKernel(
-            MaternKernel(), outputscale_prior=GammaPrior(2.0, 0.15)
+            PolynomialKernel(2), outputscale_prior=GammaPrior(2.0, 0.15)
         )
 
     model = SingleTaskGP(

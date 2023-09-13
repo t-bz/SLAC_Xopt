@@ -17,6 +17,22 @@ from scripts.characterize_emittance import characterize_emittance
 from scripts.image import ImageDiagnostic
 from scripts.automatic_emittance import BaseEmittanceMeasurement, BeamlineConfig
 
+import pandas as pd
+def explode_all_columns(data: pd.DataFrame):
+    """explode all data columns in dataframes that are lists or np.arrays"""
+    list_types = []
+    for name, val in data.iloc[0].items():
+        if isinstance(val, list) or isinstance(val, np.ndarray):
+            list_types += [name]
+
+    if len(list_types):
+        try:
+            return data.explode(list_types)
+        except ValueError:
+            raise ValueError("evaluator outputs that are lists must match in size")
+    else:
+        return data
+
 class ScreenEmittanceMeasurement(BaseEmittanceMeasurement):
     image_diagnostic: ImageDiagnostic
     minimum_log_intensity: PositiveFloat = 4.0
@@ -46,39 +62,47 @@ class ScreenEmittanceMeasurement(BaseEmittanceMeasurement):
         )
         return results
 
-    def fast_scan(self, n_points=10):
+    def fast_scan(self, n_points=5):
         """ 
         perform a fast, rough scan of the parameter space 
         
         """
+        old_pv_value = caget(self.beamline_config.scan_quad_pv)
+        
         scan_points = np.linspace(
-            *self.beamline_config.scan_quad_range
+            *self.beamline_config.scan_quad_range,
             n_points
         )
+
+        print(f"CAPUT {self.beamline_config.scan_quad_pv} {scan_points[0]}")
+        caput(self.beamline_config.scan_quad_pv, scan_points[0])
+        sleep(3.0)
 
         results = []
         for point in scan_points:
             print(f"CAPUT {self.beamline_config.scan_quad_pv} {point}")
             caput(self.beamline_config.scan_quad_pv, point)
 
-            result = self.image_diagnostic.measure_beamsize(1, **inputs)
+            sleep(1.0)
+
+            result = self.image_diagnostic.measure_beamsize(3)
             result["S_x_mm"] = np.array(result["Sx"]) * 1e-3
             result["S_y_mm"] = np.array(result["Sy"]) * 1e-3
             result[self.beamline_config.scan_quad_pv] = point
             results += [result]
             
-            sleep(0.5)
 
-            
+        # reset old pv
+        caput(self.beamline_config.scan_quad_pv, old_pv_value)
 
-        return pd.DataFrame(results)
+        return explode_all_columns(pd.DataFrame(results))
             
 
     @property
     def base_vocs(self):
         IMAGE_CONSTRAINTS = {
             "bb_penalty": ["LESS_THAN", 0.0],
-            "log10_total_intensity": ["GREATER_THAN", self.minimum_log_intensity],
+            "log10_total_intensity": ["GREATER_THAN", self.image_diagnostic.min_log_intensity],
         }
 
         # create measurement vocs
@@ -107,16 +131,19 @@ class ScreenEmittanceMeasurement(BaseEmittanceMeasurement):
 
         return vocs
 
-    def get_initial_points(self):
-        # grab current point
-        current_val = {
-            self.beamline_config.scan_quad_pv: caget(self.beamline_config.scan_quad_pv)
-        }
-        init_point = pd.DataFrame(current_val, index=[0])
-        # append two random points
-        init_point = pd.concat(
-            (init_point, pd.DataFrame(self.x_measurement_vocs.random_inputs(2))),
-            ignore_index=True,
-        )
+    def get_initial_data(self):
+        return self.fast_scan()        
 
-        return init_point
+    # def get_initial_points(self):
+    #     # grab current point
+    #     current_val = {
+    #         self.beamline_config.scan_quad_pv: caget(self.beamline_config.scan_quad_pv)
+    #     }
+    #     init_point = pd.DataFrame(current_val, index=[0])
+    #     # append two random points
+    #     init_point = pd.concat(
+    #         (init_point, pd.DataFrame(self.x_measurement_vocs.random_inputs(2))),
+    #         ignore_index=True,
+    #     )
+
+    #     return init_point
