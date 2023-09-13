@@ -1,4 +1,5 @@
 import os
+from time import time
 
 import matplotlib.pyplot as plt
 
@@ -107,7 +108,9 @@ class TestAutomaticEmittance:
             visualize=True,
         )
 
+        start = time()
         results, emit_x = emittance_measurement.run()
+        print(time() - start)
 
         emit_x.data.plot(y="x")
         ax = emit_x.data.plot.scatter(x="x", y="total_size")
