@@ -2,7 +2,11 @@ from copy import deepcopy
 from typing import Dict
 
 import torch
+import numpy as np
+import matplotlib.pyplot as plt
 from epics import caget_many
+
+from xopt import Xopt
 from lume_model.torch.model import PyTorchModel
 from lume_model.variables import InputVariable
 
@@ -121,3 +125,129 @@ def update_input_variables_to_transformer(
         var.value_range = [x_new["min"][i].item(), x_new["max"][i].item()]
         var.default = x_new["default"][i].item()
     return updated_variables
+
+
+def plot_model_in_2d(
+    X: Xopt,
+    output_name: str = None,
+    variable_names: tuple[str, str] = None,
+    constrained_acqf: bool = True,
+    n_grid: int = 100,
+    figsize: tuple[float, float] = (10, 8),
+    show_samples: bool = True,
+    fading_samples: bool = True,
+    
+) -> tuple[plt.Figure, np.ndarray]:
+    """Displays GP model predictions for selected output in 2D.
+
+    The GP model is displayed with respect to the two named input variables. If None are given,
+    the list of variables in X.vocs is used. Feasible samples are indicated with orange "+"-marks,
+    infeasible samples with red "x"-marks. Feasibility is calculated with respect to all constraints
+    unless the selected output is a constraint itself, in which case only that one is considered.
+
+    Args:
+        X: Xopt object with a Bayesian generator containing a trained GP model.
+        output_name: Selects the GP model to display.
+        variable_names: The two variables for which the model is displayed.
+          Defaults to X.vocs.variable_names.
+        constrained_acqf: Determines whether the constrained or base acquisition function is shown.
+        n_grid: Number of grid points per dimension used to display the model predictions.
+        figsize: Size of the matplotlib figure.
+        show_samples: Determines whether samples are shown.
+        fading_samples: Determines whether older samples are shown as more transparent.
+
+    Returns:
+        The matplotlib figure and axes objects.
+    """
+
+    # define output and variable names
+    if output_name is None:
+        output_name = X.vocs.output_names[0]
+    if variable_names is None:
+        variable_names = X.vocs.variable_names
+    if not len(variable_names) == 2:
+        raise ValueError(f"Number of variables should be 2, not {len(variable_names)}.")
+
+    # generate input mesh
+    x_last = X.data[X.vocs.variable_names].iloc[-1]
+    x_lim = torch.tensor([X.vocs.variables[k] for k in variable_names])
+    x_i = [torch.linspace(*x_lim[i], n_grid) for i in range(x_lim.shape[0])]
+    x_mesh = torch.meshgrid(*x_i, indexing="ij")
+    x_v = torch.hstack([ele.reshape(-1, 1) for ele in x_mesh]).double()
+    x = torch.stack(
+        [x_v[:, variable_names.index(k)] if k in variable_names else x_last[k] * torch.ones(x_v.shape[0])
+         for k in X.vocs.variable_names],
+        dim=-1,
+    )
+
+    # compute model predictions
+    gp = X.generator.model.models[X.generator.vocs.output_names.index(output_name)]
+    with torch.no_grad():
+        _x = gp.input_transform.transform(x)
+        _x = gp.mean_module(_x)
+        prior_mean = gp.outcome_transform.untransform(_x)[0]
+        posterior = gp.posterior(x)
+        posterior_mean = posterior.mean
+        posterior_sd = torch.sqrt(posterior.mvn.variance)
+        if constrained_acqf:
+            acqf_values = X.generator.get_acquisition(X.generator.model)(x.unsqueeze(1))
+        else:
+            acqf_values = X.generator.get_acquisition(X.generator.model).base_acqusition(x.unsqueeze(1))
+
+    # determine feasible samples
+    if "feasible_" + output_name in X.vocs.feasibility_data(X.data).columns:
+        feasible = X.vocs.feasibility_data(X.data)["feasible_" + output_name]
+    else:
+        feasible = X.vocs.feasibility_data(X.data)["feasible"]
+    feasible_samples = X.data[variable_names][feasible]
+    feasible_index = X.data.index.values[feasible]
+    infeasible_samples = X.data[variable_names][~feasible]
+    infeasible_index = X.data.index.values[~feasible]
+    idx_min, idx_max = np.min(X.data.index.values), np.max(X.data.index.values)
+    alpha_min = 0.1
+
+    # plot data
+    nrows, ncols = 2, 2
+    fig, axs = plt.subplots(nrows=nrows, ncols=ncols, figsize=(10, 8))
+    z = [posterior_mean, prior_mean, posterior_sd, acqf_values]
+    labels = ["Posterior Mean", "Prior Mean", "Posterior SD"]
+    if constrained_acqf:
+        labels.append("Constrained Acquisition Function")
+    else:
+        labels.append("Base Acquisition Function")
+    for i in range(nrows * ncols):
+        ax = axs[i // ncols, i % nrows]
+        pcm = ax.pcolormesh(*x_mesh, z[i].detach().squeeze().reshape(n_grid, n_grid))
+        if show_samples:
+            if not feasible_samples.empty:
+                x_0, x_1 = feasible_samples.to_numpy().T
+                if fading_samples:
+                    for j in range(len(feasible_index)):
+                        alpha = alpha_min + (1 - alpha_min) * ((feasible_index[j] - idx_min) / (idx_max - idx_min))
+                        ax.scatter(x_0[j], x_1[j], marker="+", c="C1", alpha=alpha)
+                else:
+                    ax.scatter(x_0, x_1, c="C1", marker="+")
+            if not infeasible_samples.empty:
+                x_0, x_1 = infeasible_samples.to_numpy().T
+                if fading_samples:
+                    for j in range(len(infeasible_index)):
+                        alpha = alpha_min + (1 - alpha_min) * ((infeasible_index[j] - idx_min) / (idx_max - idx_min))
+                        ax.scatter(x_0[j], x_1[j], marker="x", c="C3", alpha=alpha)
+                else:
+                    ax.scatter(x_0, x_1, c="C3", marker="x")
+        ax.locator_params(axis="both", nbins=5)
+        ax.set_title(labels[i])
+        ax.set_xlabel(variable_names[0])
+        if i % nrows == 0:
+            ax.set_ylabel(variable_names[1])
+        cbar = fig.colorbar(pcm, ax=ax)
+        if i == 2:
+            cbar_label = r"$\sigma\,$[{}]".format(output_name)
+        elif i == 3:
+            cbar_label = r"$\alpha\,$[{}]".format(X.vocs.output_names[0])
+        else:
+            cbar_label = output_name
+        cbar.set_label(cbar_label)
+    fig.tight_layout()
+
+    return fig, axs
