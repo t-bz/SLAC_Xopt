@@ -217,7 +217,7 @@ def plot_model_in_2d(
         labels.append("Base Acquisition Function")
     for i in range(nrows * ncols):
         ax = axs[i // ncols, i % nrows]
-        pcm = ax.pcolormesh(*x_mesh, z[i].detach().squeeze().reshape(n_grid, n_grid))
+        pcm = ax.pcolormesh(x_mesh[0].numpy(), x_mesh[1].numpy(), z[i].detach().squeeze().reshape(n_grid, n_grid).numpy())
         if show_samples:
             if not feasible_samples.empty:
                 x_0, x_1 = feasible_samples.to_numpy().T
@@ -226,15 +226,15 @@ def plot_model_in_2d(
                         alpha = alpha_min + (1 - alpha_min) * ((feasible_index[j] - idx_min) / (idx_max - idx_min))
                         ax.scatter(x_0[j], x_1[j], marker="+", c="C1", alpha=alpha)
                 else:
-                    ax.scatter(x_0, x_1, c="C1", marker="+")
+                    ax.scatter(x_0, x_1, marker="+", c="C1")
             if not infeasible_samples.empty:
                 x_0, x_1 = infeasible_samples.to_numpy().T
                 if fading_samples:
                     for j in range(len(infeasible_index)):
                         alpha = alpha_min + (1 - alpha_min) * ((infeasible_index[j] - idx_min) / (idx_max - idx_min))
-                        ax.scatter(x_0[j], x_1[j], marker="x", c="C3", alpha=alpha)
+                        ax.scatter(x_0[j], x_1[j], marker="o", c="C3", alpha=alpha)
                 else:
-                    ax.scatter(x_0, x_1, c="C3", marker="x")
+                    ax.scatter(x_0, x_1, marker="o", c="C3")
         ax.locator_params(axis="both", nbins=5)
         ax.set_title(labels[i])
         ax.set_xlabel(variable_names[0])
