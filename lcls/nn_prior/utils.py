@@ -200,10 +200,10 @@ def plot_model_in_2d(
     else:
         feasible = X.vocs.feasibility_data(X.data)["feasible"]
     feasible_samples = X.data[variable_names][feasible]
-    feasible_index = X.data.index.values[feasible]
+    feasible_index = X.data.index.values.astype(int)[feasible]
     infeasible_samples = X.data[variable_names][~feasible]
-    infeasible_index = X.data.index.values[~feasible]
-    idx_min, idx_max = np.min(X.data.index.values), np.max(X.data.index.values)
+    infeasible_index = X.data.index.values.astype(int)[~feasible]
+    idx_min, idx_max = np.min(X.data.index.values.astype(int)), np.max(X.data.index.values.astype(int))
     alpha_min = 0.1
 
     # plot data
