@@ -127,32 +127,36 @@ def update_input_variables_to_transformer(
     return updated_variables
 
 
-def plot_model_in_2d(
+def display_model(
     X: Xopt,
     output_name: str = None,
     variable_names: tuple[str, str] = None,
+    idx: int = -1,
+    reference_point: dict = None,
     constrained_acqf: bool = True,
-    n_grid: int = 100,
-    figsize: tuple[float, float] = (10, 8),
+    n_grid: int = 50,
+    figsize: tuple[float, float] = None,
     show_samples: bool = True,
     fading_samples: bool = True,
-    
 ) -> tuple[plt.Figure, np.ndarray]:
-    """Displays GP model predictions for selected output in 2D.
+    """Displays GP model predictions for selected output.
 
-    The GP model is displayed with respect to the two named input variables. If None are given,
+    The GP model is displayed with respect to the named input variables. If None are given,
     the list of variables in X.vocs is used. Feasible samples are indicated with orange "+"-marks,
-    infeasible samples with red "x"-marks. Feasibility is calculated with respect to all constraints
+    infeasible samples with red "o"-marks. Feasibility is calculated with respect to all constraints
     unless the selected output is a constraint itself, in which case only that one is considered.
 
     Args:
         X: Xopt object with a Bayesian generator containing a trained GP model.
         output_name: Selects the GP model to display.
-        variable_names: The two variables for which the model is displayed.
+        variable_names: The variables for which the model is displayed (maximum of 2).
           Defaults to X.vocs.variable_names.
+        idx: Index of the last sample to use.
+        reference_point: Reference point determining the value of variables not in variable_names.
+          Defaults to last used sample.
         constrained_acqf: Determines whether the constrained or base acquisition function is shown.
         n_grid: Number of grid points per dimension used to display the model predictions.
-        figsize: Size of the matplotlib figure.
+        figsize: Size of the matplotlib figure. Defaults to (6, 4) for 1D and (10, 8) for 2D.
         show_samples: Determines whether samples are shown.
         fading_samples: Determines whether older samples are shown as more transparent.
 
@@ -165,17 +169,19 @@ def plot_model_in_2d(
         output_name = X.vocs.output_names[0]
     if variable_names is None:
         variable_names = X.vocs.variable_names
-    if not len(variable_names) == 2:
-        raise ValueError(f"Number of variables should be 2, not {len(variable_names)}.")
+    dim = len(variable_names)
+    if not dim in [1, 2]:
+        raise ValueError(f"Number of variables should be 1 or 2, not {dim}.")
 
     # generate input mesh
-    x_last = X.data[X.vocs.variable_names].iloc[-1]
+    if reference_point is None:
+        reference_point = X.data[X.vocs.variable_names].iloc[idx].to_dict()
     x_lim = torch.tensor([X.vocs.variables[k] for k in variable_names])
     x_i = [torch.linspace(*x_lim[i], n_grid) for i in range(x_lim.shape[0])]
     x_mesh = torch.meshgrid(*x_i, indexing="ij")
     x_v = torch.hstack([ele.reshape(-1, 1) for ele in x_mesh]).double()
     x = torch.stack(
-        [x_v[:, variable_names.index(k)] if k in variable_names else x_last[k] * torch.ones(x_v.shape[0])
+        [x_v[:, variable_names.index(k)] if k in variable_names else reference_point[k] * torch.ones(x_v.shape[0])
          for k in X.vocs.variable_names],
         dim=-1,
     )
@@ -195,59 +201,114 @@ def plot_model_in_2d(
             acqf_values = X.generator.get_acquisition(X.generator.model).base_acqusition(x.unsqueeze(1))
 
     # determine feasible samples
+    max_idx = idx + 1
+    if max_idx == 0:
+        max_idx = None
     if "feasible_" + output_name in X.vocs.feasibility_data(X.data).columns:
-        feasible = X.vocs.feasibility_data(X.data)["feasible_" + output_name]
+        feasible = X.vocs.feasibility_data(X.data).iloc[:max_idx]["feasible_" + output_name]
     else:
-        feasible = X.vocs.feasibility_data(X.data)["feasible"]
-    feasible_samples = X.data[variable_names][feasible]
-    feasible_index = X.data.index.values[feasible]
-    infeasible_samples = X.data[variable_names][~feasible]
-    infeasible_index = X.data.index.values[~feasible]
-    idx_min, idx_max = np.min(X.data.index.values), np.max(X.data.index.values)
+        feasible = X.vocs.feasibility_data(X.data).iloc[:max_idx]["feasible"]
+    feasible_samples = X.data.iloc[:max_idx][variable_names][feasible]
+    feasible_index = X.data.iloc[:max_idx].index.values.astype(int)[feasible]
+    infeasible_samples = X.data.iloc[:max_idx][variable_names][~feasible]
+    infeasible_index = X.data.iloc[:max_idx].index.values.astype(int)[~feasible]
+    idx_min = np.min(X.data.iloc[:max_idx].index.values.astype(int))
+    idx_max = np.max(X.data.iloc[:max_idx].index.values.astype(int))
     alpha_min = 0.1
 
+    # plot configuration
+    if dim == 1:
+        sharex = True
+        nrows, ncols = 2, 1
+        if figsize is None:
+            figsize = (6, 4)
+    else:
+        sharex = False
+        nrows, ncols = 2, 2
+        if figsize is None:
+            figsize = (10, 8)
+    fig, axs = plt.subplots(nrows=nrows, ncols=ncols, figsize=figsize, sharex=True)
+
     # plot data
-    nrows, ncols = 2, 2
-    fig, axs = plt.subplots(nrows=nrows, ncols=ncols, figsize=(10, 8))
     z = [posterior_mean, prior_mean, posterior_sd, acqf_values]
     labels = ["Posterior Mean", "Prior Mean", "Posterior SD"]
+    if dim == 1:
+        labels[2] = "Posterior CL ($\pm 2\,\sigma$)"
     if constrained_acqf:
         labels.append("Constrained Acquisition Function")
     else:
         labels.append("Base Acquisition Function")
+
     for i in range(nrows * ncols):
-        ax = axs[i // ncols, i % nrows]
-        pcm = ax.pcolormesh(x_mesh[0].numpy(), x_mesh[1].numpy(), z[i].detach().squeeze().reshape(n_grid, n_grid).numpy())
+        ax = axs.flatten()[i]
+        
+        # base plot
+        if dim == 1:
+            x_axis = x[:, X.vocs.variable_names.index(variable_names[0])].squeeze().numpy()
+            if i == 0:
+                ax.plot(x_axis, z[1].detach().squeeze().numpy(), "C2--", label=labels[1])
+                ax.plot(x_axis, z[0].detach().squeeze().numpy(), "C0", label=labels[0])
+                ax.fill_between(x_axis, z[0].detach().squeeze().numpy() - 2 * z[2].detach().squeeze().numpy(),
+                                z[0].detach().squeeze().numpy() + 2 * z[2].detach().squeeze().numpy(),
+                                color="C0", alpha=0.25, label=labels[2])
+            else:
+                ax.plot(x_axis, z[-1].detach().squeeze().numpy(), label=labels[-1])
+        else:
+            pcm = ax.pcolormesh(x_mesh[0].numpy(), x_mesh[1].numpy(), z[i].detach().squeeze().reshape(n_grid, n_grid).numpy())
+        
+        # plot samples
         if show_samples:
-            if not feasible_samples.empty:
-                x_0, x_1 = feasible_samples.to_numpy().T
-                if fading_samples:
+            x_0_feasible, x_1_feasible = None, None
+            x_0_infeasible, x_1_infeasible = None, None
+            if dim == 1 and i == 0:
+                if not feasible_samples.empty:
+                    x_0_feasible = feasible_samples.to_numpy()
+                    x_1_feasible = X.data.iloc[:max_idx][output_name][feasible].to_numpy()
+                if not infeasible_samples.empty:
+                    x_0_infeasible = infeasible_samples.to_numpy()
+                    x_1_infeasible = X.data.iloc[:max_idx][output_name][~feasible].to_numpy()
+            elif dim == 2:
+                if not feasible_samples.empty:
+                    x_0_feasible, x_1_feasible = feasible_samples.to_numpy().T
+                if not infeasible_samples.empty:
+                    x_0_infeasible, x_1_infeasible = infeasible_samples.to_numpy().T
+            if x_0_feasible is not None and x_1_feasible is not None:
+                if fading_samples and idx_min < idx_max:
                     for j in range(len(feasible_index)):
                         alpha = alpha_min + (1 - alpha_min) * ((feasible_index[j] - idx_min) / (idx_max - idx_min))
-                        ax.scatter(x_0[j], x_1[j], marker="+", c="C1", alpha=alpha)
+                        ax.scatter(x_0_feasible[j], x_1_feasible[j], marker="+", c="C1", alpha=alpha)
                 else:
-                    ax.scatter(x_0, x_1, marker="+", c="C1")
-            if not infeasible_samples.empty:
-                x_0, x_1 = infeasible_samples.to_numpy().T
-                if fading_samples:
+                    ax.scatter(x_0_feasible, x_1_feasible, marker="+", c="C1")
+            if x_0_infeasible is not None and x_1_infeasible is not None:
+                if fading_samples and idx_min < idx_max:
                     for j in range(len(infeasible_index)):
                         alpha = alpha_min + (1 - alpha_min) * ((infeasible_index[j] - idx_min) / (idx_max - idx_min))
-                        ax.scatter(x_0[j], x_1[j], marker="o", c="C3", alpha=alpha)
+                        ax.scatter(x_0_infeasible[j], x_1_infeasible[j], marker="o", c="C3", alpha=alpha)
                 else:
-                    ax.scatter(x_0, x_1, marker="o", c="C3")
-        ax.locator_params(axis="both", nbins=5)
-        ax.set_title(labels[i])
-        ax.set_xlabel(variable_names[0])
-        if i % nrows == 0:
-            ax.set_ylabel(variable_names[1])
-        cbar = fig.colorbar(pcm, ax=ax)
-        if i == 2:
-            cbar_label = r"$\sigma\,$[{}]".format(output_name)
-        elif i == 3:
-            cbar_label = r"$\alpha\,$[{}]".format(X.vocs.output_names[0])
-        else:
-            cbar_label = output_name
-        cbar.set_label(cbar_label)
-    fig.tight_layout()
+                    ax.scatter(x_0_infeasible, x_1_infeasible, marker="o", c="C3")
 
+        # plot labels
+        if dim == 1:
+            if i == 0:
+                ax.set_ylabel(output_name)
+            else:
+                ax.set_xlabel(variable_names[0])
+                ax.set_ylabel(r"$\alpha\,$[{}]".format(X.vocs.output_names[0]))
+            ax.legend()
+        else:
+            ax.locator_params(axis="both", nbins=5)
+            ax.set_title(labels[i])
+            ax.set_xlabel(variable_names[0])
+            if i % nrows == 0:
+                ax.set_ylabel(variable_names[1])
+            cbar = fig.colorbar(pcm, ax=ax)
+            if i == 2:
+                cbar_label = r"$\sigma\,$[{}]".format(output_name)
+            elif i == 3:
+                cbar_label = r"$\alpha\,$[{}]".format(X.vocs.output_names[0])
+            else:
+                cbar_label = output_name
+            cbar.set_label(cbar_label)
+    
+    fig.tight_layout()
     return fig, axs
