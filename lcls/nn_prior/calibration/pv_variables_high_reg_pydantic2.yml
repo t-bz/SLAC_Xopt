@@ -1,0 +1,87 @@
+input_variables:
+  CAMR:IN20:186:R_DIST:
+    variable_type: scalar
+    default: 461.9280452917916
+    is_constant: false
+    value_range: [242.16710151296803, 540.2354352385224]
+  Pulse_length:
+    variable_type: scalar
+    default: -1.1165990359723674
+    is_constant: false
+    value_range: [-1.1496055347116485, 3.732711266192187]
+  FBCK:BCI0:1:CHRG_S:
+    variable_type: scalar
+    default: 0.2500179942105756
+    is_constant: true
+    value_range: [0.2500179942105756, 0.2500179942105756]
+  SOLN:IN20:121:BACT:
+    variable_type: scalar
+    default: 0.4889106921934544
+    is_constant: false
+    value_range: [0.41351630752853064, 0.5042132828685242]
+  QUAD:IN20:121:BACT:
+    variable_type: scalar
+    default: 0.013992518015306158
+    is_constant: false
+    value_range: [-0.0027111474311571513, 0.033279398422951904]
+  QUAD:IN20:122:BACT:
+    variable_type: scalar
+    default: -0.0030344944008459562
+    is_constant: false
+    value_range: [-0.027210440930540897, 0.022777694525981492]
+  ACCL:IN20:300:L0A_ADES:
+    variable_type: scalar
+    default: 58.000000199557164
+    is_constant: true
+    value_range: [58.000000199557164, 58.000000199557164]
+  ACCL:IN20:300:L0A_PDES:
+    variable_type: scalar
+    default: 3.1881004386299487
+    is_constant: false
+    value_range: [-12.482393665792776, 22.9781954105603]
+  ACCL:IN20:400:L0B_ADES:
+    variable_type: scalar
+    default: 70.00000011929616
+    is_constant: true
+    value_range: [70.00000011929616, 70.00000011929616]
+  ACCL:IN20:400:L0B_PDES:
+    variable_type: scalar
+    default: 36.115617233984544
+    is_constant: false
+    value_range: [-2.2557254987487774, 36.27330903443668]
+  QUAD:IN20:361:BACT:
+    variable_type: scalar
+    default: -2.691258577996132
+    is_constant: false
+    value_range: [-4.2295205457503595, -2.0802256068859637]
+  QUAD:IN20:371:BACT:
+    variable_type: scalar
+    default: 1.699703607370495
+    is_constant: false
+    value_range: [0.6678985995473976, 4.320056661934803]
+  QUAD:IN20:425:BACT:
+    variable_type: scalar
+    default: 1.2335009068926392
+    is_constant: false
+    value_range: [-6.234850037369265, 1.2335009277837847]
+  QUAD:IN20:441:BACT:
+    variable_type: scalar
+    default: -3.829104862059554
+    is_constant: false
+    value_range: [-4.802895787772664, 4.555582200486404]
+  QUAD:IN20:511:BACT:
+    variable_type: scalar
+    default: 0.42736271540358317
+    is_constant: false
+    value_range: [-3.6129146282740505, 5.263794205633578]
+  QUAD:IN20:525:BACT:
+    variable_type: scalar
+    default: -1.1863663906100133
+    is_constant: false
+    value_range: [-5.667434052157075, 1.0217483178742874]
+output_variables:
+  OTRS:IN20:571:XRMS: {variable_type: scalar}
+  OTRS:IN20:571:YRMS: {variable_type: scalar}
+  sigma_z: {variable_type: scalar}
+  norm_emit_x: {variable_type: scalar}
+  norm_emit_y: {variable_type: scalar}
