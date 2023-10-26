@@ -1,21 +1,21 @@
 beamline_config:
-  beam_energy: 0.06641461763347117
+  beam_energy: 0.1 #[rmat,zpos,leff,twiss,energy] = model_rMatGet('QUAD:DIAG0:300','OTRS:DIAG0:420',{'BEAMPATH=SC_DIAG0','TYPE=DESIGN'})
   pv_to_integrated_gradient: 1.0
-  scan_quad_length: 0.1244
-  scan_quad_pv: QUAD:HTR:120:BCTRL
+  scan_quad_length: 0.1080
+  scan_quad_pv: QUAD:DIAG0:300 #QDG006
   scan_quad_range:
-  - -4.48035
-  - 4.479
-  transport_matrix_x:
-  - - 1.0
-    - 2.2
-  - - 0.0
-    - 1.0
+  - -20.3033
+  -  20.1245
+  trasport_matrix_x:
+  - -0.9148
+  -  2.5659
+  - -0.4716
+    -0.2297
   transport_matrix_y:
-  - - 1.0
-    - 2.2
-  - - 0.0
-    - 1.0
+  -  0.1884
+  -  0.8563
+  - -1.7519
+  - -2.6558
 constants: {}
 image_diagnostic:
   array_data_suffix: Image:ArrayData
@@ -28,7 +28,7 @@ image_diagnostic:
   resolution: RESOLUTION
   roi: null
   save_image_location: null
-  screen_name: OTRS:HTR:330
+  screen_name: OTRS:DIAG0:420 #OTRDG02
   testing: true
   visualize: true
   wait_time: 1.0
@@ -36,16 +36,16 @@ minimum_log_intensity: 4.0
 n_shots: 3
 run_dir: .
 secondary_observables:
-- SOLN:GUNB:212:BCTRL
-- SOLN:GUNB:823:BCTRL
-- QUAD:GUNB:212:1:BCTRL
-- QUAD:GUNB:212:2:BCTRL
-- QUAD:GUNB:823:1:BCTRL
-- QUAD:GUNB:823:2:BCTRL
-- QUAD:HTR:120:BCTRL
-- QUAD:HTR:140:BCTRL
-- QUAD:HTR:300:BCTRL
-- QUAD:HTR:320:BCTRL
-- BEND:HTR:480:BACT
+- SOLN:GUNB:212:BCTRL  #Kicks beam into DIAG0 line:KICK:DIAG0:110:BACT   
+- SOLN:GUNB:823:BCTRL  #quads before QUAD:DIAG0:300 in diag0
+- QUAD:GUNB:212:1:BCTRL #QUAD:DIAG0:190:BCTRL
+- QUAD:GUNB:212:2:BCTRL #QUAD:DIAG0:210:BCTRL
+- QUAD:GUNB:823:1:BCTRL #QUAD:DIAG0:230:BCTRL
+- QUAD:GUNB:823:2:BCTRL #QUAD:DIAG0:270:BCTRL
+- QUAD:HTR:120:BCTRL    #QUAD:DIAG0:285:BCTRL
+- QUAD:HTR:140:BCTRL  #quads after QUAD:DIAG0:300 but before OTRS:DIAG0:420
+- QUAD:HTR:300:BCTRL  # triplet -> QUAD:DIAG0:360:BCTRL,  QUAD:DIAG0:370:BCTRL, QUAD:DIAG0:390:BCTRL
+- QUAD:HTR:320:BCTRL  #Distance from QDG006 Length distance fo
+- BEND:HTR:480:BACT   
 visualize: false
 wait_time: 2.0
