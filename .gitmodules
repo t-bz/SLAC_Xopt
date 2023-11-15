@@ -4,3 +4,6 @@
 [submodule "lcls/nn_prior/calibration/calibration_modules"]
 	path = lcls/nn_prior/calibration/calibration_modules
 	url = https://github.com/t-bz/calibration_modules
+[submodule "lcls/nn_prior/lcls_cu_injector_nn_model_nn_devel"]
+	path = lcls/nn_prior/lcls_cu_injector_nn_model_nn_devel
+	url = https://github.com/t-bz/lcls_cu_injector_nn_model.git
