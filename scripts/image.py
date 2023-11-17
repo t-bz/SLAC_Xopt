@@ -3,17 +3,17 @@ import os.path
 import time
 from copy import copy
 from time import sleep
-from typing import Union
+from typing import Union, List
 
 import h5py
 import numpy as np
 import pandas as pd
 import yaml
-from epics import caget, caget_many, caput
+from epics import PV
 from matplotlib import patches, pyplot as plt
 from pydantic import BaseModel, PositiveFloat, PositiveInt
 
-from scripts.utils.fitting_methods import fit_gaussian_linear_background
+from .utils.fitting_methods import fit_gaussian_linear_background
 
 
 class ROI(BaseModel):
@@ -45,9 +45,10 @@ class ImageDiagnostic(BaseModel):
     array_data_suffix: str = "Image:ArrayData"
     array_n_cols_suffix: str = "Image:ArraySize0_RBV"
     array_n_rows_suffix: str = "Image:ArraySize1_RBV"
-    resolution_suffix: str = "RESOLUTION"
+    resolution_suffix: Union[str, None] = "RESOLUTION"
     resolution: float = 1.0
     beam_shutter_pv: str = None
+    extra_pvs: List[str] = []
 
     background_file: str = None
     save_image_location: Union[str, None] = None
@@ -63,10 +64,16 @@ class ImageDiagnostic(BaseModel):
 
     testing: bool = False
 
-    class Config:
-        extra = "forbid"
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
-    def measure_beamsize(self, n_shots: int = 1, **kwargs):
+        # create PV objects
+        self._pvs = [
+            PV(name) for name in self.pv_names + self.extra_pvs
+        ]
+        self._shutter_pv_obj = PV(self.beam_shutter_pv)
+
+    def measure_beamsize(self, n_shots: int = 1, fit_image=True, **kwargs):
         """
         conduct a multi-shot measurement to get the beam size from images, returns
         sizes in units of `resolution`
@@ -77,15 +84,20 @@ class ImageDiagnostic(BaseModel):
         images = []
         start_time = time.time()
         for _ in range(n_shots):
-            img = self.get_processed_image()
-            result = self.calculate_beamsize(img)
 
-            # convert beam size results to microns
-            if result["Sx"] is not None:
-                result["Sx"] = result["Sx"] * self.resolution
-                result["Sy"] = result["Sy"] * self.resolution
+            # get image and PV's at the same time
+            img, extra_data = self.get_processed_image()
+            if fit_image:
+                result = self.calculate_beamsize(img)
 
-            results += [result]
+                # convert beam size results to microns
+                if result["Sx"] is not None:
+                    result["Sx"] = result["Sx"] * self.resolution
+                    result["Sy"] = result["Sy"] * self.resolution
+            else:
+                result = {}
+
+            results += [result | extra_data]
             images += [img]
             sleep(self.wait_time)
 
@@ -97,7 +109,7 @@ class ImageDiagnostic(BaseModel):
             outputs = pd.DataFrame(results).reset_index().to_dict(orient="list")
             outputs.pop("index")
 
-            # if the number of nans is greater than half but less than all of 
+            # if the number of nans is greater than half but less than all of
             # the number of shots this could be an inconsistent measurement -- raise a warning
             #n_nans = np.array(outputs["Sx"]).isna().sum()
             #if n_nans > n_shots / 2 or n_nans < n_shots:
@@ -132,12 +144,15 @@ class ImageDiagnostic(BaseModel):
             save_filename = os.path.join(
                 self.save_image_location, f"{screen_name}_{int(start_time)}.h5"
             )
-            screen_stats = json.loads(self.json())
+            screen_stats = json.loads(self.model_dump_json())
             with h5py.File(save_filename, "w") as hf:
                 dset = hf.create_dataset("images", data=np.array(images))
                 for name, val in (outputs | kwargs | screen_stats).items():
                     if val is not None:
-                        dset.attrs[name] = val
+                        try:
+                            dset.attrs[name] = val
+                        except TypeError:
+                            dset.attrs[name] = str(val)
 
             outputs["save_filename"] = save_filename
 
@@ -161,8 +176,10 @@ class ImageDiagnostic(BaseModel):
             self.array_data_suffix,
             self.array_n_cols_suffix,
             self.array_n_rows_suffix,
-            self.resolution_suffix,
         ]
+        if self.resolution_suffix is not None:
+            suffixes += [self.resolution_suffix]
+
         return [f"{self.screen_name}:{ele}" for ele in suffixes]
 
     @property
@@ -172,19 +189,26 @@ class ImageDiagnostic(BaseModel):
         else:
             return 0.0
 
-    def get_raw_image(self) -> (np.ndarray, float):
+    def get_raw_data(self) -> (np.ndarray, dict):
         if self.testing:
             img = np.zeros((2000, 2000))
             img[800:-800, 900:-900] = 1
             self.resolution = 1.0
+            extra_data = {
+                "ICT1": np.random.randn() + 1.0,
+                "ICT2": np.random.randn() + 1.0
+            }
         else:
-            img, nx, ny, self.resolution = caget_many(self.pv_names)
+            # get pvs
+            results = [ele.get() for ele in self._pvs]
+            img, nx, ny = results[0], results[1], results[2]
             img = img.reshape(ny, nx)
 
-        return img
+            extra_data = dict(zip(self.extra_pvs, results[2:]))
+        return img, extra_data
 
     def get_processed_image(self):
-        img = self.get_raw_image()
+        img, extra_data = self.get_raw_data()
 
         # subtract background
         img = img - self.background_image
@@ -194,7 +218,7 @@ class ImageDiagnostic(BaseModel):
         if self.roi is not None:
             img = self.roi.crop_image(img)
 
-        return img
+        return img, extra_data
 
     def measure_background(self, n_measurements: int = 5, file_location: str = None):
         file_location = file_location or ""
@@ -204,8 +228,8 @@ class ImageDiagnostic(BaseModel):
         )
         # insert shutter
         if self.beam_shutter_pv is not None:
-            old_shutter_state = caget(self.beam_shutter_pv)
-            caput(self.beam_shutter_pv, 0)
+            old_shutter_state = self._shutter_pv_obj.get()
+            self._shutter_pv_obj.put(0)
             sleep(5.0)
 
         images = []
@@ -215,7 +239,7 @@ class ImageDiagnostic(BaseModel):
 
         # restore shutter state
         if self.beam_shutter_pv is not None:
-            caput(self.beam_shutter_pv, old_shutter_state)
+            self._shutter_pv_obj.put(old_shutter_state)
 
         # return average
         images = np.stack(images)
