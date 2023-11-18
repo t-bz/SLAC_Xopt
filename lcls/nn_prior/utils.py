@@ -1,20 +1,23 @@
+import datetime
+import os
 from copy import deepcopy
-from typing import Dict
+from typing import Union
 
+import numpy as np
 import torch
 from epics import caget_many
 
 from lume_model.variables import InputVariable
-from xopt import VOCS
+from xopt.generators.bayesian.bayesian_generator import BayesianGenerator
 from xopt.generators.bayesian.objectives import feasibility
 
 
 def update_variables(
-    variable_ranges: Dict,
-    input_variables: Dict,
+    variable_ranges: dict,
+    input_variables: dict,
     inputs_small: torch.Tensor,
     from_machine_state: bool = False,
-) -> Dict[str, list]:
+) -> dict[str, list]:
     updated_variables = {}
     if not from_machine_state:
         # use variable_ranges and update invalid defaults with median from data samples
@@ -43,36 +46,28 @@ def update_variables(
     return updated_variables
 
 
-def create_vocs(
-    measurement_options: Dict,
-    image_constraints: Dict[str, list],
-    updated_variables: Dict[str, list],
-    case: int = 1,
-) -> VOCS:
-    case_1_variables = [
-        "SOLN:IN20:121:BCTRL",
-        "QUAD:IN20:121:BCTRL",
-        "QUAD:IN20:122:BCTRL",
-    ]
-    if case == 1:
-        constants = {k: v for k, v in measurement_options.items()}
-        for k, v in updated_variables.items():
-            if k not in case_1_variables:
-                constants[k] = v[-1]
-        vocs = VOCS(
-            variables={k: updated_variables[k][:2] for k in case_1_variables},
-            constants=constants,
-            objectives={"total_size": "MINIMIZE"},
-            constraints=image_constraints,
-        )
-    else:
-        vocs = VOCS(
-            variables={k: v[:2] for k, v in updated_variables.items()},
-            constants=measurement_options,
-            objectives={"total_size": "MINIMIZE"},
-            constraints=image_constraints,
-        )
-    return vocs
+def get_model_predictions(input_dict, generator: BayesianGenerator = None):
+    output_dict = {}
+    if generator is not None:
+        for output_name in generator.vocs.output_names:
+            if generator.model is not None:
+                gp = generator.model.models[generator.vocs.output_names.index(output_name)]
+                x = torch.tensor(
+                    [input_dict[k] for k in generator.vocs.variable_names], dtype=torch.double
+                ).unsqueeze(0)
+                with torch.no_grad():
+                    _x = gp.input_transform.transform(x)
+                    _x = gp.mean_module(_x)
+                    prior_mean = gp.outcome_transform.untransform(_x)[0].item()
+                    posterior = gp.posterior(x)
+                    posterior_mean = posterior.mean.item()
+                    posterior_sd = torch.sqrt(posterior.mvn.variance).item()
+            else:
+                prior_mean, posterior_mean, posterior_sd = [np.nan] * 3
+            output_dict[output_name + "_prior_mean"] = prior_mean
+            output_dict[output_name + "_posterior_mean"] = posterior_mean
+            output_dict[output_name + "_posterior_sd"] = posterior_sd
+    return output_dict
 
 
 def update_input_variables_to_transformer(
@@ -501,3 +496,136 @@ class FixedEvalModel(torch.nn.Module):
     def forward(self, x) -> torch.Tensor:
         self.model.eval()
         return self.model(x)
+
+
+def isotime():
+    """Returns the time formatted according to ISO."""
+    t = datetime.datetime.utcnow()
+    return t.replace(tzinfo=datetime.timezone.utc).astimezone().replace(microsecond=0).isoformat()
+
+
+def numpy_save(run_dir: Union[str, os.PathLike], spec: str = "x"):
+    path = os.path.join(run_dir, "Data", "")
+    if not os.path.exists(path):
+        os.makedirs(path)
+    pvname_list = [
+        "SOLN:IN20:121:BACT",
+        "QUAD:IN20:121:BACT",
+        "QUAD:IN20:122:BACT",
+        "QUAD:IN20:361:BACT",
+        "QUAD:IN20:371:BACT",
+        "QUAD:IN20:425:BACT",
+        "QUAD:IN20:441:BACT",
+        "QUAD:IN20:511:BACT",
+        "QUAD:IN20:525:BACT",
+        "SOLN:IN20:121:BCTRL",
+        "QUAD:IN20:121:BCTRL",
+        "QUAD:IN20:122:BCTRL",
+        "QUAD:IN20:361:BCTRL",
+        "QUAD:IN20:371:BCTRL",
+        "QUAD:IN20:425:BCTRL",
+        "QUAD:IN20:441:BCTRL",
+        "QUAD:IN20:511:BCTRL",
+        "QUAD:IN20:525:BCTRL",
+        "CAMR:IN20:186:IMAGE",
+        "CAMR:IN20:186:N_OF_ROW",
+        "CAMR:IN20:186:N_OF_COL",
+        "CAMR:IN20:186:Y",
+        "CAMR:IN20:186:X",
+        "CAMR:IN20:186:YRMS",
+        "CAMR:IN20:186:XRMS",
+        "CAMR:IN20:186:RESOLUTION",
+        "IRIS:LR20:130:CONFG_SEL",
+        "ACCL:IN20:300:L0A_PDES",
+        "ACCL:IN20:300:L0A_ADES",
+        "ACCL:IN20:400:L0B_PDES",
+        "ACCL:IN20:400:L0B_ADES",
+        "ACCL:IN20:300:L0A_S_PV",  # PHASE AVG
+        "ACCL:IN20:400:L0B_S_PV",  # PHASE AVG
+        "ACCL:IN20:300:L0A_S_AV",  # AMP AVG
+        "ACCL:IN20:400:L0B_S_AV",  # AMP AVG
+        "GUN:IN20:1:GN1_ADES",
+        "GUN:IN20:1:GN1_S_AV",
+        "GUN:IN20:1:GN1_S_PV",
+        "LASR:IN20:196:PWR1H",
+        "LASR:IN20:475:PWR1H",
+        "SIOC:SYS0:ML01:CALCOUT008",
+        "REFS:IN20:751:EDES",
+        "CAMR:IN20:186:ZERNIKE_COEFF",
+        "FBCK:BCI0:1:CHRG_S",
+        "PMTR:LR20:121:PWR",
+        "BPMS:IN20:731:X",  # energy BPM
+        "TCAV:IN20:490:TC0_C_1_TCTL",  # if 1, TCAV is on
+        "KLYS:LI20:51:BEAMCODE1_TCTL",  # if 1, TCAV is on
+        "LASR:LR20:1:UV_LASER_MODE",
+        "LASR:LR20:1:IR_LASER_MODE",
+        "IOC:BSY0:MP01:LSHUTCTL",
+        "WPLT:LR20:220:LHWP_ANGLE",
+        "OTRS:IN20:621:PNEUMATIC",
+    ]
+    img_list_yags2 = [
+        "YAGS:IN20:995:IMAGE",
+        "YAGS:IN20:995:XRMS",
+        "YAGS:IN20:995:YRMS",
+        "YAGS:IN20:995:ROI_XNP",
+        "YAGS:IN20:995:ROI_YNP",
+        "YAGS:IN20:995:X",
+        "YAGS:IN20:995:Y",
+        "YAGS:IN20:995:RESOLUTION",
+        "YAGS:IN20:995:BLEN",
+    ]
+    img_list_otr2 = [
+        "OTRS:IN20:571:IMAGE",
+        "OTRS:IN20:571:XRMS",
+        "OTRS:IN20:571:YRMS",
+        "OTRS:IN20:571:ROI_XNP",
+        "OTRS:IN20:571:ROI_YNP",
+        "OTRS:IN20:571:X",
+        "OTRS:IN20:571:Y",
+        "OTRS:IN20:571:RESOLUTION",
+    ]
+    img_list_otr3 = [
+        "OTRS:IN20:621:IMAGE",
+        "OTRS:IN20:621:XRMS",
+        "OTRS:IN20:621:YRMS",
+        "OTRS:IN20:621:ROI_XNP",
+        "OTRS:IN20:621:ROI_YNP",
+        "OTRS:IN20:621:X",
+        "OTRS:IN20:621:Y",
+        "OTRS:IN20:621:RESOLUTION",
+    ]
+    img_list_yag02 = [
+        "YAGS:IN20:241:IMAGE",
+        "YAGS:IN20:241:XRMS",
+        "YAGS:IN20:241:YRMS",
+        "YAGS:IN20:241:ROI_XNP",
+        "YAGS:IN20:241:ROI_YNP",
+        "YAGS:IN20:241:X",
+        "YAGS:IN20:241:Y",
+        "YAGS:IN20:241:RESOLUTION",
+    ]
+    img_list_yag03 = [
+        "YAGS:IN20:351:IMAGE",
+        "YAGS:IN20:351:XRMS",
+        "YAGS:IN20:351:YRMS",
+        "YAGS:IN20:351:ROI_XNP",
+        "YAGS:IN20:351:ROI_YNP",
+        "YAGS:IN20:351:X",
+        "YAGS:IN20:351:Y",
+        "YAGS:IN20:351:RESOLUTION",
+    ]
+    if spec == "z":
+        img_list = img_list_yags2
+    elif spec == "x":
+        img_list = img_list_otr3
+    else:
+        raise ValueError(f"Spec {spec} isn't recognized.")
+    ts = isotime()
+    # read pvs
+    values = caget_many(pvname_list)
+    imgs = caget_many(img_list)
+    # save to file
+    f_values = os.path.join(path, f"values_{ts}.npz")
+    np.savez(f_values, **dict(zip(pvname_list, values)))
+    f_imgs = os.path.join(path, f"imgs_{ts}.npz")
+    np.savez(f_imgs, **dict(zip(img_list, imgs)))
