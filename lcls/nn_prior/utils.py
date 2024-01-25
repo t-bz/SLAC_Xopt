@@ -1,52 +1,149 @@
 import datetime
 import os
-from copy import deepcopy
-from typing import Union
+from typing import Any, Union
 
 import numpy as np
+import pandas as pd
 import torch
+import yaml
 from epics import caget_many
+from torch import Tensor
 
-from lume_model.variables import InputVariable
+from lume_model.models import TorchModel, TorchModule
 from xopt.generators.bayesian.bayesian_generator import BayesianGenerator
-from xopt.generators.bayesian.objectives import feasibility
+from xopt.vocs import VOCS
 
 
-def update_variables(
-    variable_ranges: dict,
-    input_variables: dict,
-    inputs_small: torch.Tensor,
-    from_machine_state: bool = False,
-) -> dict[str, list]:
-    updated_variables = {}
-    if not from_machine_state:
-        # use variable_ranges and update invalid defaults with median from data samples
-        for k, v in variable_ranges.items():
-            default_on_file = input_variables[k].default
-            if not v[0] < default_on_file < v[1]:
-                # QUAD:IN20:361:BCTRL: -2.79151
-                # QUAD:IN20:371:BCTRL: 2.2584
-                # QUAD:IN20:425:BCTRL: 0.131524
-                print("Redefined default value for:", k)
-                idx = list(input_variables.keys()).index(k)
-                sample_median = torch.median(inputs_small[:, idx]).item()
-                if not v[0] < sample_median < v[1]:
-                    raise ValueError("Sample median not in range!")
-                updated_variables[k] = [*v, sample_median]
-            else:
-                updated_variables[k] = [*v, default_on_file]
+class ObjectiveModel(torch.nn.Module):
+    """Defines how to compute the objective based on model predictions"""
+    def __init__(
+        self,
+        model: TorchModule,
+        objective_scale: float = None,
+        objective_offset: float = None,
+        include_roundness: bool = True,
+        use_sim_model: bool = False,
+    ):
+        """Initializes ObjectiveModel.
+
+        Args:
+            model: LCLS injector surrogate model.
+            objective_scale: Scaling factor for the objective. Defaults to 1e-3 (or 1e3 for the simulation
+              model) which yields a transverse beamsize given in mm.
+            objective_offset: Adds a fixed offset to the objective.
+            include_roundness: Whether to include a term penalizing asymmetric beam shapes.
+            use_sim_model: If True, the default objective scaling is set to 1e3 (1e-3 otherwise) and the
+              simulation variable names are used to extract sigma_x and sigma_y from the model output.
+        """
+        super(ObjectiveModel, self).__init__()
+        self.model = model
+        self.objective_scale = objective_scale
+        if self.objective_scale is None:
+            self.objective_scale = 1e3 if use_sim_model else 1e-3
+        self.objective_offset = objective_offset
+        if self.objective_offset is None:
+            self.objective_offset = 0.0
+        self.include_roundness = include_roundness
+        self.use_sim_model = use_sim_model
+
+    def function(self, sigma_x: Tensor, sigma_y: Tensor) -> Tensor:
+        """Computes the objective from the given beamsizes in x and y.
+
+        Args:
+            sigma_x: Beamsize in x.
+            sigma_y: Beamsize in y.
+
+        Returns:
+            The objective value.
+        """
+        # using this calculation due to occasional negative values
+        sigma_xy = torch.sqrt(sigma_x ** 2 + sigma_y ** 2)
+        v = sigma_xy + torch.abs(sigma_x - sigma_y) if self.include_roundness else sigma_xy
+        return self.objective_scale * v + self.objective_offset
+
+    def forward(self, x) -> Tensor:
+        sigma_x_label = "sigma_x" if self.use_sim_model else "OTRS:IN20:571:XRMS"
+        sigma_y_label = "sigma_y" if self.use_sim_model else "OTRS:IN20:571:YRMS"
+        idx_sigma_x = self.model.output_order.index(sigma_x_label)
+        idx_sigma_y = self.model.output_order.index(sigma_y_label)
+        sigma_x = self.model(x)[..., idx_sigma_x]
+        sigma_y = self.model(x)[..., idx_sigma_y]
+        return self.function(sigma_x, sigma_y)
+
+
+def get_performance_stats(data: Tensor, confidence_level: float = 0.9) -> tuple[Tensor, Tensor, Tensor]:
+    """Computes the median and confidence level across several BO runs.
+
+    Args:
+        data: Performance data across several BO runs.
+        confidence_level: Confidence level used to calculate the lower and upper bound.
+
+    Returns:
+        Median, lower bound and upper bound corresponding to the confidence level.
+    """
+    if not 0.0 <= confidence_level <= 1.0:
+        raise ValueError("Confidence level must be between 0 and 1.")
+    q = 0.9 + (1 - confidence_level) / 2
+    m = torch.nanmedian(data, dim=0).values
+    lb = torch.nanquantile(data, q=q, dim=0)
+    ub = torch.nanquantile(data, q=1 - q, dim=0)
+    return m, lb, ub
+
+
+def load_model(
+        input_variables: list[str] = None,
+        model_path: Union[str, os.PathLike] = "lcls_cu_injector_nn_model/",
+        calibration_path: Union[str, os.PathLike] = "calibration/",
+        reg: str = None,
+        use_sim_model: bool = False,
+):
+    """Loads the specified version of the LCLS injector surrogate model from file.
+
+    Args:
+        input_variables: Input variables for the model.
+        model_path: Directory of the models files.
+        calibration_path: Directory of the calibration files.
+        reg: Amount of regularization used in training the calibration layers. Select from [None, "low", "mid",
+          "high"] to load the corresponding transformers.
+        use_sim_model: If True, sim_model is loaded (pv_model otherwise).
+
+    Returns:
+        The LCLS injector surrogate model.
+    """
+    if use_sim_model:
+        # load TorchModel
+        lume_model = TorchModel(model_path + "model/sim_model.yml")
     else:
-        # get machine values to set ranges and defaults
-        machine_values = caget_many(list(variable_ranges.keys()))
-        relative_range = 0.05
-        for i, k in enumerate(variable_ranges.keys()):
-            min_value = machine_values[i] - relative_range * machine_values[i]
-            max_value = machine_values[i] + relative_range * machine_values[i]
-            updated_variables[k] = [min_value, max_value, machine_values[i]]
-    return updated_variables
+        # load TorchModel
+        lume_model = TorchModel(model_path + "model/pv_model.yml")
+        # replace keys in input variables
+        for var in lume_model.input_variables:
+            var.name = var.name.replace("BACT", "BCTRL")
+    # load calibration transformers
+    if reg is not None:
+        input_nn_to_cal = torch.load(calibration_path + f"input_nn_to_cal_{reg}_reg.pt")
+        output_nn_to_cal = torch.load(calibration_path + f"output_nn_to_cal_{reg}_reg.pt")
+        lume_model.input_transformers = lume_model.input_transformers + [input_nn_to_cal]
+        lume_model.output_transformers = [output_nn_to_cal] + lume_model.output_transformers
+    # wrap in TorchModule
+    lume_module = TorchModule(
+        model=lume_model,
+        input_order=input_variables,
+        output_order=lume_model.output_names[0:2],
+    )
+    return ObjectiveModel(lume_module)
 
 
-def get_model_predictions(input_dict, generator: BayesianGenerator = None):
+def get_model_predictions(input_dict, generator: BayesianGenerator = None) -> dict[str, Any]:
+    """Computes the prior and posterior GP model predictions.
+
+    Args:
+        input_dict: Inputs for which to compute the GP model predictions.
+        generator: Bayesian generator containing the GP model.
+
+    Returns:
+        GP model predictions for the prior mean, posterior mean and posterior standard deviation.
+    """
     output_dict = {}
     if generator is not None:
         for output_name in generator.vocs.output_names:
@@ -70,432 +167,86 @@ def get_model_predictions(input_dict, generator: BayesianGenerator = None):
     return output_dict
 
 
-def update_input_variables_to_transformer(
-    lume_model, transformer_loc: int
-) -> list[InputVariable]:
-    """Returns input variables updated to the transformer at the given location.
-
-    Updated are the value ranges and default of the input variables. This allows, e.g., to add a
-    calibration transformer and to update the input variable specification accordingly.
+def load_xopt_data(file: Union[str, os.PathLike]) -> pd.DataFrame:
+    """Loads data from a Xopt YAML-file.
 
     Args:
-        lume_model: The LUME-model for which the input variables shall be updated.
-        transformer_loc: The location of the input transformer to adjust for.
+        file: Path to the YAML-file.
 
     Returns:
-        The updated input variables.
+        Loaded data with sorted index.
     """
-    x_old = {
-        "min": torch.tensor(
-            [var.value_range[0] for var in lume_model.input_variables.values()],
-            dtype=torch.double,
-        ),
-        "max": torch.tensor(
-            [var.value_range[1] for var in lume_model.input_variables.values()],
-            dtype=torch.double,
-        ),
-        "default": torch.tensor(
-            [var.default for var in lume_model.input_variables.values()],
-            dtype=torch.double,
-        ),
-    }
-    x_new = {}
-    for key in x_old.keys():
-        x = x_old[key]
-        # compute previous limits at transformer location
-        for i in range(transformer_loc):
-            x = lume_model.input_transformers[i].transform(x)
-        # untransform of transformer to adjust for
-        x = lume_model.input_transformers[transformer_loc].untransform(x)
-        # backtrack through transformers
-        for transformer in lume_model.input_transformers[:transformer_loc][::-1]:
-            x = transformer.untransform(x)
-        x_new[key] = x
-    updated_variables = deepcopy(lume_model.input_variables)
-    for i, var in enumerate(updated_variables.values()):
-        var.value_range = [x_new["min"][i].item(), x_new["max"][i].item()]
-        var.default = x_new["default"][i].item()
-    return updated_variables
+    with open(file) as f:
+        df = pd.DataFrame(yaml.safe_load(f)["data"])
+    df.index = map(int, df.index)
+    df = df.sort_index(axis=0)
+    return df
 
 
-def visualize_generator_model(
-    generator,
-    output_names: list[str] = None,
-    variable_names: list[str] = None,
-    idx: int = -1,
-    reference_point: dict = None,
-    show_samples: bool = True,
-    show_prior_mean: bool = False,
-    show_feasibility: bool = False,
-    n_grid: int = 50,
-) -> tuple:
-    """Displays GP model predictions for the selected output(s).
+def get_running_optimum(data: pd.DataFrame, objective_name: str, maximize: bool) -> np.ndarray:
+    """Returns the running optimum for the given data and objective.
 
-    The GP models are displayed with respect to the named variables. If None are given, the list of variables in
-    generator.vocs is used. Feasible samples are indicated with a filled orange "o", infeasible samples with a
-    hollow red "o". Feasibility is calculated with respect to all constraints unless the selected output is a
-    constraint itself, in which case only that one is considered.
+    Parameters
+    ----------
+    data: pd.DataFrame
+        Data for which the running optimum shall be calculated.
+    objective_name: str
+        Name of the data column containing the objective values.
+    maximize: bool
+        If True, consider the problem a maximization problem (minimization otherwise).
+
+    Returns
+    -------
+    np.ndarray
+        Running optimum for the given data.
+
+    """
+    get_opt = np.max if maximize else np.min
+    return np.array([get_opt(data[objective_name].iloc[:i + 1]) for i in range(len(data))])
+
+
+def calculate_mae(a: Tensor, b: Tensor) -> Tensor:
+    """Calculates the mean absolute error (MAE) for the given tensors.
 
     Args:
-        generator: Bayesian generator object.
-        output_names: Outputs for which the GP models are displayed. Defaults to all outputs in generator.vocs.
-        variable_names: The variables with respect to which the GP models are displayed (maximum of 2).
-          Defaults to generator.vocs.variable_names.
-        idx: Index of the last sample to use. This also selects the point of reference in higher dimensions unless
-          an explicit reference_point is given.
-        reference_point: Reference point determining the value of variables in generator.vocs.variable_names,
-          but not in variable_names (slice plots in higher dimensions). Defaults to last used sample.
-        show_samples: Whether samples are shown.
-        show_prior_mean: Whether the prior mean is shown.
-        show_feasibility: Whether the feasibility region is shown.
-        n_grid: Number of grid points per dimension used to display the model predictions.
+        a: First tensor.
+        b: Second tensor.
 
     Returns:
-        The matplotlib figure and axes objects.
+        The mean absolute error (MAE).
     """
+    return torch.nn.functional.l1_loss(a, b)
 
-    # define output and variable names
-    vocs, data = generator.vocs, generator.data
-    if output_names is None:
-        output_names = vocs.output_names
-    if variable_names is None:
-        variable_names = vocs.variable_names
-    dim_x, dim_y = len(variable_names), len(output_names)
-    if dim_x not in [1, 2]:
-        raise ValueError(f"Number of variables should be 1 or 2, not {dim_x}.")
 
-    # check names exist in vocs
-    for names, s in zip(
-        [output_names, variable_names], ["output_names", "variable_names"]
-    ):
-        invalid = [name not in getattr(vocs, s) for name in names]
-        if any(invalid):
-            invalid_names = [names[i] for i in range(len(names)) if invalid[i]]
-            raise ValueError(f"Names {invalid_names} are not in generator.vocs.{s}.")
+def calculate_correlation(a: Tensor, b: Tensor) -> Tensor:
+    """Calculates the correlation for the given tensors.
 
-    # generate input mesh
-    if reference_point is None:
-        reference_point = data[vocs.variable_names].iloc[idx].to_dict()
-    x_lim = torch.tensor([vocs.variables[k] for k in variable_names])
-    x_i = [torch.linspace(*x_lim[i], n_grid) for i in range(x_lim.shape[0])]
+    Args:
+        a: First tensor.
+        b: Second tensor.
+
+    Returns:
+        The correlation.
+    """
+    corr = torch.corrcoef(torch.stack([a.squeeze(), b.squeeze()]))
+    return corr[0, 1]
+
+
+def generate_input_mesh(vocs: VOCS, n: int = 10) -> pd.DataFrame:
+    """Generates an input mesh with n^n_variables points.
+
+    Args:
+        vocs: VOCS object defining the variables.
+        n: Number of base points.
+
+    Returns:
+        Input mesh data.
+    """
+    x_lim = torch.tensor([vocs.variables[k] for k in vocs.variable_names], dtype=torch.double)
+    x_i = [torch.linspace(*x_lim[i], n, dtype=torch.double) for i in range(x_lim.shape[0])]
     x_mesh = torch.meshgrid(*x_i, indexing="ij")
-    x_v = torch.hstack([ele.reshape(-1, 1) for ele in x_mesh]).double()
-    x = torch.stack(
-        [
-            x_v[:, variable_names.index(k)]
-            if k in variable_names
-            else reference_point[k] * torch.ones(x_v.shape[0])
-            for k in vocs.variable_names
-        ],
-        dim=-1,
-    )
-
-    # compute model predictions
-    if generator.model is None:
-        raise ValueError(
-            "The generator.model doesn't exist, try calling generator.train_model()."
-        )
-    model = generator.model
-    predictions = {}
-    for output_name in output_names:
-        gp = model.models[vocs.output_names.index(output_name)]
-        with torch.no_grad():
-            prior_mean = None
-            if show_prior_mean:
-                _x = gp.input_transform.transform(x)
-                _x = gp.mean_module(_x)
-                prior_mean = (
-                    gp.outcome_transform.untransform(_x)[0].detach().squeeze().numpy()
-                )
-            posterior = gp.posterior(x)
-            posterior_mean = posterior.mean.detach().squeeze().numpy()
-            posterior_sd = torch.sqrt(posterior.mvn.variance).detach().squeeze().numpy()
-        predictions[output_name] = [posterior_mean, posterior_sd, prior_mean]
-    # acquisition function
-    base_acq = None
-    acq = generator.get_acquisition(model)
-    if hasattr(acq, "base_acquisition"):
-        base_acq = acq.base_acquisition(x.unsqueeze(1)).detach().squeeze().numpy()
-    elif hasattr(acq, "base_acqusition"):
-        base_acq = acq.base_acqusition(x.unsqueeze(1)).detach().squeeze().numpy()
-    predictions["acq"] = [base_acq, acq(x.unsqueeze(1)).detach().squeeze().numpy()]
-    if show_feasibility:
-        predictions["feasibility"] = (
-            feasibility(x.unsqueeze(1), model, vocs).detach().squeeze().numpy()
-        )
-
-    # determine feasible and infeasible samples
-    max_idx = idx + 1
-    if max_idx == 0:
-        max_idx = None
-    samples = {}
-    for output_name in output_names:
-        if "feasible_" + output_name in vocs.feasibility_data(data).columns:
-            feasible = vocs.feasibility_data(data).iloc[:max_idx][
-                "feasible_" + output_name
-            ]
-        else:
-            feasible = vocs.feasibility_data(data).iloc[:max_idx]["feasible"]
-        feasible_samples = data.iloc[:max_idx][variable_names][feasible]
-        infeasible_samples = data.iloc[:max_idx][variable_names][~feasible]
-        samples[output_name] = [feasible, feasible_samples, infeasible_samples]
-
-    # plot configuration
-    nrows, ncols = 1 + dim_y, dim_x
-    if show_prior_mean and dim_x == 2:
-        ncols += 1
-    if show_feasibility:
-        if dim_x == 2 and show_prior_mean:
-            pass
-        else:
-            nrows += 1
-    if dim_x == 1:
-        sharex, sharey = True, False
-        figsize = (6, 2 * nrows)
-    else:
-        sharex, sharey = True, True
-        figsize = (4 * ncols, 3.2 * nrows)
-    # lazy import
-    from matplotlib import pyplot as plt
-    from matplotlib.legend_handler import HandlerTuple
-    from mpl_toolkits.axes_grid1 import make_axes_locatable
-
-    fig, ax = plt.subplots(
-        nrows=nrows, ncols=ncols, sharex=sharex, sharey=sharey, figsize=figsize
-    )
-
-    # create plot
-    if dim_x == 1:
-        x_axis = x[:, vocs.variable_names.index(variable_names[0])].squeeze().numpy()
-        for i, output_name in enumerate(output_names):
-            # model predictions
-            if i == 0:
-                color_idx = 0
-            elif i == 1:
-                color_idx = 2
-            else:
-                color_idx = i + 2
-            if output_name in vocs.constraint_names:
-                ax[i].axhline(
-                    y=vocs.constraints[output_name][1],
-                    color=f"C{color_idx}",
-                    linestyle=":",
-                    label="Constraint Threshold",
-                )
-            if show_prior_mean:
-                ax[i].plot(
-                    x_axis,
-                    predictions[output_name][2],
-                    f"C{color_idx}--",
-                    label="Prior Mean",
-                )
-            ax[i].plot(
-                x_axis,
-                predictions[output_name][0],
-                f"C{color_idx}-",
-                label="Posterior Mean",
-            )
-            c = ax[i].fill_between(
-                x_axis,
-                predictions[output_name][0] - 2 * predictions[output_name][1],
-                predictions[output_name][0] + 2 * predictions[output_name][1],
-                color=f"C{color_idx}",
-                alpha=0.25,
-                label="",
-            )
-            # data samples
-            if show_samples:
-                if not samples[output_name][1].empty:
-                    x_feasible = samples[output_name][1].to_numpy()
-                    y_feasible = data.iloc[:max_idx][output_name][
-                        samples[output_name][0]
-                    ].to_numpy()
-                    ax[i].scatter(
-                        x_feasible,
-                        y_feasible,
-                        marker="o",
-                        facecolors="C1",
-                        edgecolors="none",
-                        zorder=5,
-                        label="Feasible Samples",
-                    )
-                if not samples[output_name][2].empty:
-                    x_infeasible = samples[output_name][2].to_numpy()
-                    y_infeasible = data.iloc[:max_idx][output_name][
-                        ~samples[output_name][0]
-                    ].to_numpy()
-                    ax[i].scatter(
-                        x_infeasible,
-                        y_infeasible,
-                        marker="o",
-                        facecolors="none",
-                        edgecolors="C3",
-                        zorder=5,
-                        label="Infeasible Samples",
-                    )
-            ax[i].set_ylabel(output_name)
-            handles, labels = ax[i].get_legend_handles_labels()
-            for j in range(len(labels)):
-                if labels[j] == "Posterior Mean":
-                    labels[j] = r"Posterior Mean $\pm 2\,\sigma$"
-                    handles[j] = (handles[j], c)
-            if all(
-                [ele in labels for ele in ["Feasible Samples", "Infeasible Samples"]]
-            ):
-                labels[-2] = "In-/Feasible Samples"
-                handles[-2] = [handles[-1], handles[-2]]
-                del labels[-1], handles[-1]
-            ax[i].legend(
-                labels=labels,
-                handles=handles,
-                handler_map={list: HandlerTuple(ndivide=None)},
-            )
-        # acquisition function
-        if predictions["acq"][0] is None:
-            ax[len(output_names)].plot(x_axis, predictions["acq"][1], "C0-")
-        else:
-            ax[len(output_names)].plot(
-                x_axis, predictions["acq"][0], "C0--", label="Base Acq. Function"
-            )
-            ax[len(output_names)].plot(
-                x_axis, predictions["acq"][1], "C0-", label="Constrained Acq. Function"
-            )
-            ax[len(output_names)].legend()
-        ax[len(output_names)].set_ylabel(r"$\alpha\,$[{}]".format(vocs.output_names[0]))
-        # feasibility
-        if show_feasibility:
-            ax[-1].plot(x_axis, predictions["feasibility"], "C0-")
-            ax[-1].set_ylabel("Feasibility")
-        ax[-1].set_xlabel(variable_names[0])
-
-    else:
-        for i in range(nrows):
-            for j in range(ncols):
-                if i == nrows - 1:
-                    ax[i, j].set_xlabel(variable_names[0])
-                if j == 0:
-                    ax[i, j].set_ylabel(variable_names[1])
-                ax[i, j].locator_params(axis="both", nbins=5)
-        for i, output_name in enumerate(output_names):
-            for j in range(ncols):
-                # model predictions
-                pcm = ax[i, j].pcolormesh(
-                    x_mesh[0].numpy(),
-                    x_mesh[1].numpy(),
-                    predictions[output_name][j].reshape(n_grid, n_grid),
-                )
-                divider = make_axes_locatable(ax[i, j])
-                cax = divider.append_axes("right", size="5%", pad=0.1)
-                cbar = fig.colorbar(pcm, cax=cax)
-                if j == 0:
-                    ax[i, j].set_title(f"Posterior Mean [{output_name}]")
-                    cbar.set_label(output_name)
-                elif j == 1:
-                    ax[i, j].set_title(f"Posterior SD [{output_name}]")
-                    cbar.set_label(r"$\sigma\,$[{}]".format(output_name))
-                else:
-                    ax[i, j].set_title(f"Prior Mean [{output_name}]")
-                    cbar.set_label(output_name)
-                # data samples
-                if show_samples:
-                    if not samples[output_name][1].empty:
-                        x1_feasible, x2_feasible = samples[output_name][1].to_numpy().T
-                        ax[i, j].scatter(
-                            x1_feasible,
-                            x2_feasible,
-                            marker="o",
-                            facecolors="C1",
-                            edgecolors="none",
-                            zorder=5,
-                            label="Feasible Samples",
-                        )
-                    if not samples[output_name][2].empty:
-                        x1_infeasible, x2_infeasible = (
-                            samples[output_name][2].to_numpy().T
-                        )
-                        ax[i, j].scatter(
-                            x1_infeasible,
-                            x2_infeasible,
-                            marker="o",
-                            facecolors="none",
-                            edgecolors="C3",
-                            zorder=5,
-                            label="Infeasible Samples",
-                        )
-                if i == j == 0:
-                    handles, labels = ax[i, j].get_legend_handles_labels()
-                    if all(
-                        [
-                            ele in labels
-                            for ele in ["Feasible Samples", "Infeasible Samples"]
-                        ]
-                    ):
-                        labels[-2] = "In-/Feasible Samples"
-                        handles[-2] = [handles[-1], handles[-2]]
-                        del labels[-1], handles[-1]
-                    ax[i, j].legend(
-                        labels=labels,
-                        handles=handles,
-                        handler_map={list: HandlerTuple(ndivide=None)},
-                    )
-        # acquisition function
-        if predictions["acq"][0] is None:
-            pcm = ax[len(output_names), 0].pcolormesh(
-                x_mesh[0].numpy(),
-                x_mesh[1].numpy(),
-                predictions["acq"][1].reshape(n_grid, n_grid),
-            )
-            divider = make_axes_locatable(ax[len(output_names), 0])
-            cax = divider.append_axes("right", size="5%", pad=0.1)
-            cbar = fig.colorbar(pcm, cax=cax)
-            cbar.set_label(r"$\alpha\,$[{}]".format(vocs.output_names[0]))
-            ax[len(output_names), 0].set_title("Acq. Function")
-            ax[len(output_names), 1].axis("off")
-        else:
-            for j in range(2):
-                pcm = ax[len(output_names), j].pcolormesh(
-                    x_mesh[0].numpy(),
-                    x_mesh[1].numpy(),
-                    predictions["acq"][j].reshape(n_grid, n_grid),
-                )
-                divider = make_axes_locatable(ax[len(output_names), j])
-                cax = divider.append_axes("right", size="5%", pad=0.1)
-                cbar = fig.colorbar(pcm, cax=cax)
-                cbar.set_label(r"$\alpha\,$[{}]".format(vocs.output_names[0]))
-            ax[len(output_names), 0].set_title("Base Acq. Function")
-            ax[len(output_names), 1].set_title("Constrained Acq. Function")
-        # feasibility
-        if show_feasibility:
-            if ncols == 3:
-                ax_feasibility = ax[len(output_names), 2]
-            else:
-                ax_feasibility = ax[-1, 0]
-                ax[-1, 1].axis("off")
-            pcm = ax_feasibility.pcolormesh(
-                x_mesh[0].numpy(),
-                x_mesh[1].numpy(),
-                predictions["feasibility"].reshape(n_grid, n_grid),
-            )
-            divider = make_axes_locatable(ax_feasibility)
-            cax = divider.append_axes("right", size="5%", pad=0.1)
-            cbar = fig.colorbar(pcm, cax=cax)
-            cbar.set_label("Feasibility")
-            ax_feasibility.set_title("Feasibility")
-        else:
-            if ncols == 3:
-                ax[len(output_names), 2].axis("off")
-    fig.tight_layout()
-    return fig, ax
-
-
-class FixedEvalModel(torch.nn.Module):
-    def __init__(self, model: torch.nn.Module):
-        super(FixedEvalModel, self).__init__()
-        self.model = model
-
-    def forward(self, x) -> torch.Tensor:
-        self.model.eval()
-        return self.model(x)
+    x = torch.hstack([ele.reshape(-1, 1) for ele in x_mesh])
+    return pd.DataFrame({k: x[:, vocs.variable_names.index(k)] for k in vocs.variable_names})
 
 
 def isotime():
@@ -504,11 +255,18 @@ def isotime():
     return t.replace(tzinfo=datetime.timezone.utc).astimezone().replace(microsecond=0).isoformat()
 
 
-def numpy_save(run_dir: Union[str, os.PathLike], spec: str = "x"):
+def numpy_save(run_dir: Union[str, os.PathLike], device_name: str = "OTR3"):
+    """Reads and stores a list of relevant PVs to a numpy file.
+
+    Args:
+        run_dir: Directory to which the numpy file is saved.
+        device_name: Measurement device used, should be in ["YAGS2", "YAG02", "YAG03", "OTR2", "OTR3", "WIRE561"].
+          Defaults to "OTR3".
+    """
     path = os.path.join(run_dir, "Data", "")
     if not os.path.exists(path):
         os.makedirs(path)
-    pvname_list = [
+    pvs = [
         "SOLN:IN20:121:BACT",
         "QUAD:IN20:121:BACT",
         "QUAD:IN20:122:BACT",
@@ -563,69 +321,73 @@ def numpy_save(run_dir: Union[str, os.PathLike], spec: str = "x"):
         "WPLT:LR20:220:LHWP_ANGLE",
         "OTRS:IN20:621:PNEUMATIC",
     ]
-    img_list_yags2 = [
-        "YAGS:IN20:995:IMAGE",
-        "YAGS:IN20:995:XRMS",
-        "YAGS:IN20:995:YRMS",
-        "YAGS:IN20:995:ROI_XNP",
-        "YAGS:IN20:995:ROI_YNP",
-        "YAGS:IN20:995:X",
-        "YAGS:IN20:995:Y",
-        "YAGS:IN20:995:RESOLUTION",
-        "YAGS:IN20:995:BLEN",
-    ]
-    img_list_otr2 = [
-        "OTRS:IN20:571:IMAGE",
-        "OTRS:IN20:571:XRMS",
-        "OTRS:IN20:571:YRMS",
-        "OTRS:IN20:571:ROI_XNP",
-        "OTRS:IN20:571:ROI_YNP",
-        "OTRS:IN20:571:X",
-        "OTRS:IN20:571:Y",
-        "OTRS:IN20:571:RESOLUTION",
-    ]
-    img_list_otr3 = [
-        "OTRS:IN20:621:IMAGE",
-        "OTRS:IN20:621:XRMS",
-        "OTRS:IN20:621:YRMS",
-        "OTRS:IN20:621:ROI_XNP",
-        "OTRS:IN20:621:ROI_YNP",
-        "OTRS:IN20:621:X",
-        "OTRS:IN20:621:Y",
-        "OTRS:IN20:621:RESOLUTION",
-    ]
-    img_list_yag02 = [
-        "YAGS:IN20:241:IMAGE",
-        "YAGS:IN20:241:XRMS",
-        "YAGS:IN20:241:YRMS",
-        "YAGS:IN20:241:ROI_XNP",
-        "YAGS:IN20:241:ROI_YNP",
-        "YAGS:IN20:241:X",
-        "YAGS:IN20:241:Y",
-        "YAGS:IN20:241:RESOLUTION",
-    ]
-    img_list_yag03 = [
-        "YAGS:IN20:351:IMAGE",
-        "YAGS:IN20:351:XRMS",
-        "YAGS:IN20:351:YRMS",
-        "YAGS:IN20:351:ROI_XNP",
-        "YAGS:IN20:351:ROI_YNP",
-        "YAGS:IN20:351:X",
-        "YAGS:IN20:351:Y",
-        "YAGS:IN20:351:RESOLUTION",
-    ]
-    if spec == "z":
-        img_list = img_list_yags2
-    elif spec == "x":
-        img_list = img_list_otr3
-    else:
-        raise ValueError(f"Spec {spec} isn't recognized.")
+    device_to_pvs = {
+        "YAGS2": [
+            "YAGS:IN20:995:IMAGE",
+            "YAGS:IN20:995:XRMS",
+            "YAGS:IN20:995:YRMS",
+            "YAGS:IN20:995:ROI_XNP",
+            "YAGS:IN20:995:ROI_YNP",
+            "YAGS:IN20:995:X",
+            "YAGS:IN20:995:Y",
+            "YAGS:IN20:995:RESOLUTION",
+            "YAGS:IN20:995:BLEN",
+        ],
+        "YAG02": [
+            "YAGS:IN20:241:IMAGE",
+            "YAGS:IN20:241:XRMS",
+            "YAGS:IN20:241:YRMS",
+            "YAGS:IN20:241:ROI_XNP",
+            "YAGS:IN20:241:ROI_YNP",
+            "YAGS:IN20:241:X",
+            "YAGS:IN20:241:Y",
+            "YAGS:IN20:241:RESOLUTION",
+        ],
+        "YAG03": [
+            "YAGS:IN20:351:IMAGE",
+            "YAGS:IN20:351:XRMS",
+            "YAGS:IN20:351:YRMS",
+            "YAGS:IN20:351:ROI_XNP",
+            "YAGS:IN20:351:ROI_YNP",
+            "YAGS:IN20:351:X",
+            "YAGS:IN20:351:Y",
+            "YAGS:IN20:351:RESOLUTION",
+        ],
+        "OTR2": [
+            "OTRS:IN20:571:IMAGE",
+            "OTRS:IN20:571:XRMS",
+            "OTRS:IN20:571:YRMS",
+            "OTRS:IN20:571:ROI_XNP",
+            "OTRS:IN20:571:ROI_YNP",
+            "OTRS:IN20:571:X",
+            "OTRS:IN20:571:Y",
+            "OTRS:IN20:571:RESOLUTION",
+        ],
+        "OTR3": [
+            "OTRS:IN20:621:IMAGE",
+            "OTRS:IN20:621:XRMS",
+            "OTRS:IN20:621:YRMS",
+            "OTRS:IN20:621:ROI_XNP",
+            "OTRS:IN20:621:ROI_YNP",
+            "OTRS:IN20:621:X",
+            "OTRS:IN20:621:Y",
+            "OTRS:IN20:621:RESOLUTION",
+        ],
+        "WIRE561": [
+            "WIRE:IN20:561:XRMS",
+            "WIRE:IN20:561:YRMS",
+        ]
+    }
+    name = device_name.upper()
+    if name not in device_to_pvs.keys():
+        raise ValueError(f"Device name {name} isn't recognized.")
     ts = isotime()
     # read pvs
-    values = caget_many(pvname_list)
-    imgs = caget_many(img_list)
+    img_pvs = device_to_pvs[name]
+    values = caget_many(pvs)
+    img_values = caget_many(img_pvs)
     # save to file
     f_values = os.path.join(path, f"values_{ts}.npz")
-    np.savez(f_values, **dict(zip(pvname_list, values)))
-    f_imgs = os.path.join(path, f"imgs_{ts}.npz")
-    np.savez(f_imgs, **dict(zip(img_list, imgs)))
+    np.savez(f_values, **dict(zip(pvs, values)))
+    f_img = os.path.join(path, f"img_values_{ts}.npz")
+    np.savez(f_img, **dict(zip(img_pvs, img_values)))
