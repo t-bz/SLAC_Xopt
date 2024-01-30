@@ -18,9 +18,10 @@ def gaussian_linear_background(x, amp, mu, sigma, offset=0):
 
 
 class GaussianLeastSquares:
-    def __init__(self, train_x: Tensor, train_y: Tensor):
+    def __init__(self, train_x: Tensor, train_y: Tensor, pk_loc):
         self.train_x = train_x
         self.train_y = train_y
+        self.pk_loc = pk_loc
 
     def forward(self, X):
         amp = X[..., 0].unsqueeze(-1)
@@ -30,7 +31,14 @@ class GaussianLeastSquares:
         train_x = self.train_x.repeat(*X.shape[:-1], 1)
         train_y = self.train_y.repeat(*X.shape[:-1], 1)
         pred = amp * torch.exp(-((train_x - mu) ** 2) / 2 / sigma**2) + offset
-        loss = -torch.sum((pred - train_y) ** 2, dim=-1).sqrt() / len(train_y)
+        neg_mse = -torch.sum((pred - train_y) ** 2, dim=-1).sqrt() / len(train_y)
+        neg_log_prior_loss = -0.01*(amp.squeeze() - 1.0)**2 -\
+            0.01**2 * (mu.squeeze() - self.pk_loc)**2
+        #print(
+        #    float(torch.mean(neg_mse)),
+        #    float(torch.mean(neg_log_prior_loss))
+        #)
+        loss = neg_mse + neg_log_prior_loss
 
         return loss
 
@@ -42,24 +50,31 @@ def fit_gaussian_linear_background(y, inital_guess=None, visualize=True, n_resta
     amp, mu, sigma and their associated 1sig error
     """
 
-    x = np.arange(y.shape[0])
-    width = y.shape[0]
+    # threshold off mean value on the edge of the domain
+    thresholded_y = y - np.mean(y[-10:])
+    thresholded_y = np.where(thresholded_y > 0, thresholded_y, 0)
+
+    # normalize amplitude
+    normed_y = thresholded_y / max(thresholded_y)
+
+    x = np.arange(normed_y.shape[0])
+    width = normed_y.shape[0]
     inital_guess = inital_guess or {}
     sigma_min = 2.0
 
     # specify initial guesses if not provided in initial_guess
-    smoothed_y = np.clip(gaussian_filter(y, 3), 0, np.inf)
+    smoothed_y = np.clip(gaussian_filter(normed_y, 3), 0, np.inf)
 
     pk_value = np.max(smoothed_y)
     pk_loc = np.argmax(smoothed_y)
 
-    offset = inital_guess.pop("offset", np.mean(y[-10:]))
+    offset = inital_guess.pop("offset", np.mean(normed_y[-10:]))
     amplitude = inital_guess.pop("amplitude", smoothed_y.max() - offset)
     # slope = inital_guess.pop("slope", 0)
 
     # use weighted mean and rms to guess
     center = inital_guess.pop("mu", pk_loc)
-    sigma = inital_guess.pop("sigma", y.shape[0] / 5)
+    sigma = inital_guess.pop("sigma", normed_y.shape[0] / 2)
 
     para0 = torch.tensor([amplitude, center, sigma, offset])
 
@@ -74,8 +89,8 @@ def fit_gaussian_linear_background(y, inital_guess=None, visualize=True, n_resta
 
     bounds = torch.tensor(
         (
-            (pk_value / 2.0, max(center - width / 4, 0), sigma_min, -1000.0),
-            (pk_value * 1.5, min(center + width / 4, width), width, 1000.0),
+            (pk_value / 2.0, max(center - width / 4, 0), sigma_min, 0.0),
+            (pk_value * 1.5, min(center + width / 4, width), width, 1.2),
         )
     )
 
@@ -83,8 +98,10 @@ def fit_gaussian_linear_background(y, inital_guess=None, visualize=True, n_resta
     para0 = torch.clip(para0, bounds[0], bounds[1])
 
     # create LSQ model
-    model = GaussianLeastSquares(torch.tensor(x), torch.tensor(y))
-    smoothed_model = GaussianLeastSquares(torch.tensor(x), torch.tensor(smoothed_y))
+    model = GaussianLeastSquares(torch.tensor(x), torch.tensor(normed_y),
+                                 torch.tensor(pk_loc))
+    smoothed_model = GaussianLeastSquares(torch.tensor(x), torch.tensor(smoothed_y),
+                                          torch.tensor(pk_loc))
 
     # fit smoothed model to get better initial points
     scandidates, svalues = gen_candidates_scipy(
@@ -109,35 +126,33 @@ def fit_gaussian_linear_background(y, inital_guess=None, visualize=True, n_resta
     # drop these from candidates
     # print(candidates)
     indiv_condition = torch.stack((
-        candidates[:, -2] > sigma_min * 1.1, 
+        candidates[:, -2] > sigma_min * 1.1,
         candidates[:, -2] < width / 1.5,
-        candidates[:, 0] > 100))
+        candidates[:, 0] > 0.1))
     # print(indiv_condition)
-    
-    condition = torch.all(indiv_condition,dim=0)
+
+    condition = torch.all(indiv_condition, dim=0)
     # print(condition)
     valid_candidates = candidates[condition]
     valid_values = values[condition]
-
 
     if len(valid_candidates) > 0:
         # get best valid from restarts
         candidate = valid_candidates[torch.argmax(valid_values)].detach().numpy()
 
         if visualize:
-            plot_fit(x, y, candidate)
+            plot_fit(x, normed_y, candidate)
 
     else:
         # if no fits were successful return nans
         bad_candidate = candidates[torch.argmax(values)].detach().numpy()
         if visualize:
-            fig, ax = plot_fit(x, y, bad_candidate)
+            fig, ax = plot_fit(x, normed_y, bad_candidate)
             ax.set_title("bad fit")
 
         candidate = [np.NaN] * 4
 
     return candidate
-
 
 def plot_fit(x, y, para_x):
     """
