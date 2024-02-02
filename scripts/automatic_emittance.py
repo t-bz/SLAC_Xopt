@@ -10,7 +10,7 @@ import traceback
 import numpy as np
 import pandas as pd
 import yaml
-from emitopt.utils import get_quad_strength_conversion_factor
+from emitopt.utils import get_quad_scale_factor
 from epics import caget, caget_many, caput
 from pydantic import BaseModel, PositiveFloat, PositiveInt
 from xopt import VOCS
@@ -45,7 +45,7 @@ class BeamlineConfig(BaseModel):
         returns a scale factor that translates pv values to geometric focusing
         strength in m^{-2}
         """
-        int_grad_to_geo_focusing_strength = get_quad_strength_conversion_factor(
+        int_grad_to_geo_focusing_strength = get_quad_scale_factor(
             self.beam_energy, self.scan_quad_length
         )
         return self.pv_to_integrated_gradient * int_grad_to_geo_focusing_strength
@@ -131,7 +131,6 @@ class BaseEmittanceMeasurement(BaseModel, ABC):
 
         # get old setting
         old_pv_value = caget(self.beamline_config.scan_quad_pv)
-
         
         # run scan
         try:
