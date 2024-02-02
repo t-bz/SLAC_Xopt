@@ -48,13 +48,12 @@ def perform_sampling(
         vocs=vocs,
         beta=100.0,
         gp_constructor=model_constructor,
+        numerical_optimizer=GridOptimizer(n_grid_points=100),
         turbo_controller=turbo_controller,
         n_interpolate_points=n_interpolate_points,
         n_monte_carlo_samples=32,
         **generator_kwargs,
     )
-    generator.numerical_optimizer.max_time=5.0
-
     beamsize_evaluator = Evaluator(function=beamsize_evaluator)
     X = Xopt(generator=generator, evaluator=beamsize_evaluator, vocs=vocs)
     X.dump_file = dump_file
