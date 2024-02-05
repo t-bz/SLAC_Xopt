@@ -154,6 +154,7 @@ def fit_gaussian_linear_background(y, inital_guess=None, visualize=True, n_resta
 
     return candidate
 
+
 def plot_fit(x, y, para_x):
     """
     Plot  beamsize fit in x or y direction
