@@ -32,12 +32,14 @@ class GaussianLeastSquares:
         train_y = self.train_y.repeat(*X.shape[:-1], 1)
         pred = amp * torch.exp(-((train_x - mu) ** 2) / 2 / sigma**2) + offset
         neg_mse = -torch.sum((pred - train_y) ** 2, dim=-1).sqrt() / len(train_y)
-        neg_log_prior_loss = -0.01*(amp.squeeze() - 1.0)**2 -\
-            0.01**2 * (mu.squeeze() - self.pk_loc)**2
-        #print(
+        neg_log_prior_loss = (
+            -0.01 * (amp.squeeze() - 1.0) ** 2
+            - 0.01**2 * (mu.squeeze() - self.pk_loc) ** 2
+        )
+        # print(
         #    float(torch.mean(neg_mse)),
         #    float(torch.mean(neg_log_prior_loss))
-        #)
+        # )
         loss = neg_mse + neg_log_prior_loss
 
         return loss
@@ -98,10 +100,12 @@ def fit_gaussian_linear_background(y, inital_guess=None, visualize=True, n_resta
     para0 = torch.clip(para0, bounds[0], bounds[1])
 
     # create LSQ model
-    model = GaussianLeastSquares(torch.tensor(x), torch.tensor(normed_y),
-                                 torch.tensor(pk_loc))
-    smoothed_model = GaussianLeastSquares(torch.tensor(x), torch.tensor(smoothed_y),
-                                          torch.tensor(pk_loc))
+    model = GaussianLeastSquares(
+        torch.tensor(x), torch.tensor(normed_y), torch.tensor(pk_loc)
+    )
+    smoothed_model = GaussianLeastSquares(
+        torch.tensor(x), torch.tensor(smoothed_y), torch.tensor(pk_loc)
+    )
 
     # fit smoothed model to get better initial points
     scandidates, svalues = gen_candidates_scipy(
@@ -125,10 +129,13 @@ def fit_gaussian_linear_background(y, inital_guess=None, visualize=True, n_resta
     # or an amplitude that is within the noise
     # drop these from candidates
     # print(candidates)
-    indiv_condition = torch.stack((
-        candidates[:, -2] > sigma_min * 1.1,
-        candidates[:, -2] < width / 1.5,
-        candidates[:, 0] > 0.1))
+    indiv_condition = torch.stack(
+        (
+            candidates[:, -2] > sigma_min * 1.1,
+            candidates[:, -2] < width / 1.5,
+            candidates[:, 0] > 0.1,
+        )
+    )
     # print(indiv_condition)
 
     condition = torch.all(indiv_condition, dim=0)

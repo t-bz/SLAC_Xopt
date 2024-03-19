@@ -8,7 +8,7 @@ def visualize_step(generator, title=""):
     test_x = torch.linspace(*generator.vocs.bounds.flatten(), 500).double()
 
     vocs = generator.vocs
-    
+
     # get the Gaussian process model from the generator
     model = generator.train_model()
 
@@ -27,24 +27,24 @@ def visualize_step(generator, title=""):
 
     # get mean function and confidence regions
     mean = posterior.mean
-    l,u = posterior.mvn.confidence_region()
+    l, u = posterior.mvn.confidence_region()
 
     # plot model and acquisition function
     n_outputs = vocs.n_outputs
-    fig, ax = plt.subplots(n_outputs+1, 1, sharex="all")
+    fig, ax = plt.subplots(n_outputs + 1, 1, sharex="all")
     fig.set_size_inches(6, 10)
 
     # plot model posterior
     for i in range(n_outputs):
-        ax[i].plot(test_x, mean[:,i],f"C{i}", label=vocs.output_names[i])
-        ax[i].fill_between(test_x, l[:,i], u[:,i], 
-                           alpha=0.25, fc=f"C{i}" )
-    
+        ax[i].plot(test_x, mean[:, i], f"C{i}", label=vocs.output_names[i])
+        ax[i].fill_between(test_x, l[:, i], u[:, i], alpha=0.25, fc=f"C{i}")
+
         # add data to model plot
         ax[i].plot(
             generator.data[vocs.variable_names],
             generator.data[vocs.output_names[i]],
-            f"C{i}o", label="Training data"
+            f"C{i}o",
+            label="Training data",
         )
         ax[i].set_ylabel(vocs.output_names[i])
 
@@ -64,12 +64,12 @@ def visualize_step(generator, title=""):
                 a.axvline(ele)
 
     # add legend
-    #ax[0].legend()
+    # ax[0].legend()
 
     ax[-1].set_ylabel(r"$\alpha(x)$")
     ax[-1].set_xlabel("x")
     ax[0].set_title(title)
 
-    #plt.show()
+    # plt.show()
 
     return fig, ax

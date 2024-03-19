@@ -121,7 +121,7 @@ class BaseEmittanceMeasurement(BaseModel, ABC):
         # generate initial points
         print("getting initial points to measure")
         initial_points = self.get_initial_points()
-        #print(initial_points)
+        # print(initial_points)
 
         # generate initial data
         print("getting initial data")
@@ -131,7 +131,7 @@ class BaseEmittanceMeasurement(BaseModel, ABC):
 
         # get old setting
         old_pv_value = caget(self.beamline_config.scan_quad_pv)
-        
+
         # run scan
         try:
             emit_results, emit_Xopt = characterize_emittance(
@@ -149,19 +149,17 @@ class BaseEmittanceMeasurement(BaseModel, ABC):
                 visualize=self.visualize,
                 dump_file=self.dump_file,
             )
-    
+
             # add self info to dump file
             info = yaml.safe_load(open(self.dump_file))
             info = info | {"emittance_measurement": self.dict()}
-    
+
             with open(self.dump_file, "w") as f:
                 yaml.dump(info, f)
 
         except Exception:
             print(traceback.format_exc())
         finally:
-            caput(self.beamline_config.scan_quad_pv,old_pv_value)
-        
-        return emit_results, emit_Xopt
-        
+            caput(self.beamline_config.scan_quad_pv, old_pv_value)
 
+        return emit_results, emit_Xopt

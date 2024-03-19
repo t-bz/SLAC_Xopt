@@ -26,9 +26,12 @@ class ROI(BaseModel):
 
     @property
     def bounding_box(self):
-        return [self.xcenter - int(self.xwidth/2),
-                self.ycenter - int(self.ywidth/2),
-                self.xwidth, self.ywidth]
+        return [
+            self.xcenter - int(self.xwidth / 2),
+            self.ycenter - int(self.ywidth / 2),
+            self.xwidth,
+            self.ywidth,
+        ]
 
     def crop_image(self, img):
         x_size, y_size = img.shape
@@ -40,7 +43,7 @@ class ROI(BaseModel):
             )
 
         bbox = self.bounding_box
-        img = img[bbox[0]: bbox[0] + bbox[2], bbox[1]: bbox[1] + bbox[3]]
+        img = img[bbox[0] : bbox[0] + bbox[2], bbox[1] : bbox[1] + bbox[3]]
 
         return img
 
@@ -74,9 +77,7 @@ class ImageDiagnostic(BaseModel):
         super().__init__(**kwargs)
 
         # create PV objects
-        self._pvs = [
-            PV(name) for name in self.pv_names + self.extra_pvs
-        ]
+        self._pvs = [PV(name) for name in self.pv_names + self.extra_pvs]
         self._shutter_pv_obj = PV(self.beam_shutter_pv)
 
     def measure_beamsize(self, n_shots: int = 1, fit_image=True, **kwargs):
@@ -90,7 +91,6 @@ class ImageDiagnostic(BaseModel):
         images = []
         start_time = time.time()
         for _ in range(n_shots):
-
             # get image and PV's at the same time
             img, extra_data, raw_img = self.get_processed_image()
             if fit_image:
@@ -117,8 +117,8 @@ class ImageDiagnostic(BaseModel):
 
             # if the number of nans is greater than half but less than all of
             # the number of shots this could be an inconsistent measurement -- raise a warning
-            #n_nans = np.array(outputs["Sx"]).isna().sum()
-            #if n_nans > n_shots / 2 or n_nans < n_shots:
+            # n_nans = np.array(outputs["Sx"]).isna().sum()
+            # if n_nans > n_shots / 2 or n_nans < n_shots:
             #    warning.warn(
             #        "The number of invalid measurements is greater than half the" + \
             #        "number of shots but is not all of the measurements." + \
@@ -202,7 +202,7 @@ class ImageDiagnostic(BaseModel):
             self.resolution = 1.0
             extra_data = {
                 "ICT1": np.random.randn() + 1.0,
-                "ICT2": np.random.randn() + 1.0
+                "ICT2": np.random.randn() + 1.0,
             }
         else:
             # get pvs
@@ -283,7 +283,7 @@ class ImageDiagnostic(BaseModel):
                 "Sx": np.NaN,
                 "Sy": np.NaN,
                 "bb_penalty": np.NaN,
-                "total_intensity": 10 ** log10_total_intensity,
+                "total_intensity": 10**log10_total_intensity,
                 "log10_total_intensity": log10_total_intensity,
             }
             return result
@@ -315,37 +315,26 @@ class ImageDiagnostic(BaseModel):
                     ax[0].plot(*roi_c, ".r")
 
                     rect = patches.Rectangle(
-                        pts[0],
-                        *sizes * n_stds * 2.0,
-                        facecolor="none", edgecolor="r"
+                        pts[0], *sizes * n_stds * 2.0, facecolor="none", edgecolor="r"
                     )
                     ax[1].add_patch(rect)
 
                     # plot bounding circle
                     circle = patches.Circle(
-                        roi_c, self.roi.xwidth / 2,
-                        facecolor="none", edgecolor="r"
+                        roi_c, self.roi.xwidth / 2, facecolor="none", edgecolor="r"
                     )
                     ax[0].add_patch(circle)
 
                     circle2 = patches.Circle(
-                        (
-                            self.roi.xwidth / 2,
-                            self.roi.xwidth / 2
-                        ),
+                        (self.roi.xwidth / 2, self.roi.xwidth / 2),
                         self.roi.xwidth / 2,
-                        facecolor="none", edgecolor="r"
+                        facecolor="none",
+                        edgecolor="r",
                     )
                     ax[1].add_patch(circle2)
 
-                temp = pts - np.array((
-                    self.roi.xwidth / 2,
-                    self.roi.xwidth / 2
-                ))
-                distances = np.linalg.norm(
-                    temp,
-                    axis=1
-                )
+                temp = pts - np.array((self.roi.xwidth / 2, self.roi.xwidth / 2))
+                distances = np.linalg.norm(temp, axis=1)
                 # subtract radius to get penalty value
                 bb_penalty = np.max(distances) - roi_radius
 

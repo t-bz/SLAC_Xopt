@@ -24,6 +24,7 @@ from emitopt.analysis import compute_emit_bayesian
 from scripts.custom_turbo import QuadScanTurbo
 from scripts.utils.visualization import visualize_step
 
+
 def perform_sampling(
     vocs,
     turbo_length,
@@ -35,11 +36,11 @@ def perform_sampling(
     n_interpolate_points,
     quad_strength_key,
     initial_data=None,
-    visualize=False
+    visualize=False,
 ):
     # run points to determine emittance
     # ===================================
-    
+
     # set up Xopt object
     # use beta to control the relative spacing between points and the observed minimum
     turbo_controller = QuadScanTurbo(vocs, length=turbo_length)
@@ -68,15 +69,15 @@ def perform_sampling(
 
     if len(X.data) == 0:
         raise RuntimeError(
-            "no data added to model during initialization, "\
-            "must specify either initial_data or initial_points"\
+            "no data added to model during initialization, "
+            "must specify either initial_data or initial_points"
             "to perform sampling"
         )
 
     if visualize > 1:
         visualize_step(X.generator, f"{X.vocs.objective_names[0]}, step:{1}")
     X.step()
-       
+
     # perform exploration
     for i in range(n_iterations - 1):
         print(i)
@@ -87,10 +88,7 @@ def perform_sampling(
 
     # get minimum point
     turbo_controller = X.generator.turbo_controller
-    min_pt = (
-        turbo_controller.center_x, 
-        turbo_controller.best_value
-    )
+    min_pt = (turbo_controller.center_x, turbo_controller.best_value)
 
     # return data
     return X.data, min_pt, X
@@ -107,7 +105,7 @@ def characterize_emittance(
     initial_points: DataFrame = None,
     initial_data: DataFrame = None,
     n_iterations: int = 5,
-    n_interpolate_points: int =5,
+    n_interpolate_points: int = 5,
     turbo_length: float = 1.0,
     generator_kwargs: Dict = None,
     visualize: int = 0,
@@ -231,38 +229,40 @@ def characterize_emittance(
     )
     print(f"Runtime: {time.perf_counter() - start}")
 
-    return analyze_data(
-        gen_data_y, 
-        beamline_config, 
-        quad_strength_key, 
-        rms_x_key, 
-        rms_y_key,
-        [min_pt_x, min_pt_y],
-        visualize
-    ), X
+    return (
+        analyze_data(
+            gen_data_y,
+            beamline_config,
+            quad_strength_key,
+            rms_x_key,
+            rms_y_key,
+            [min_pt_x, min_pt_y],
+            visualize,
+        ),
+        X,
+    )
 
 
 def analyze_data(
-    analysis_data, 
-    beamline_config, 
-    quad_strength_key, 
-    rms_x_key, 
-    rms_y_key, 
-    minimum_pts, 
-    visualize
+    analysis_data,
+    beamline_config,
+    quad_strength_key,
+    rms_x_key,
+    rms_y_key,
+    minimum_pts,
+    visualize,
 ):
     # get subset of data for analysis, drop Nan measurements
     analysis_data = deepcopy(analysis_data)[
         [quad_strength_key, rms_x_key, rms_y_key]
     ].dropna()
-    
 
     key = [rms_x_key, rms_y_key]
     rmat = [beamline_config.transport_matrix_x, beamline_config.transport_matrix_y]
     name = ["x", "y"]
     beta0 = [beamline_config.design_beta_x, beamline_config.design_beta_y]
     alpha0 = [beamline_config.design_alpha_x, beamline_config.design_alpha_y]
-    
+
     result = {}
 
     for i in range(2):
@@ -270,32 +270,32 @@ def analyze_data(
         data = deepcopy(analysis_data)
 
         # window data via a fixed width around the minimum point
-        #min_loc =  minimum_pts[i][0][quad_strength_key]
-        #width = 2.5
-        #data = data[
+        # min_loc =  minimum_pts[i][0][quad_strength_key]
+        # width = 2.5
+        # data = data[
         #   pd.DataFrame(
         #       (
         #           data[quad_strength_key] < min_loc + width / 2,
         #           data[quad_strength_key] > min_loc - width / 2,
         #       )
         #   ).all()
-        #]
+        # ]
 
         # window data via a fixed multiple of the minimum value
-        #min_multiplier = 2
-        #max_val = minimum_pts[i][1] * min_multiplier
-        #data = data[data[key[i]] < max_val]
+        # min_multiplier = 2
+        # max_val = minimum_pts[i][1] * min_multiplier
+        # data = data[data[key[i]] < max_val]
 
         # get data from xopt object and scale to [m^{-2}]
         k = (
             data[quad_strength_key].to_numpy(dtype=np.double)
             * beamline_config.pv_to_focusing_strength
         )
-        
+
         # flip sign of focusing strengths for y
         if name[i] == "y":
             k = -k
-        
+
         rms = data[key[i]].to_numpy(dtype=np.double)
 
         # get transport matrix from quad to screen
@@ -319,12 +319,8 @@ def analyze_data(
         gamma = beamline_config.beam_energy / 0.511e-3
         result = result | {
             f"{name[i]}_emittance": float(gamma * torch.quantile(stats[0], 0.5)),
-            f"{name[i]}_emittance_05": float(
-                gamma * torch.quantile(stats[0], 0.05)
-            ),
-            f"{name[i]}_emittance_95": float(
-                gamma * torch.quantile(stats[0], 0.95)
-            ),
+            f"{name[i]}_emittance_05": float(gamma * torch.quantile(stats[0], 0.05)),
+            f"{name[i]}_emittance_95": float(gamma * torch.quantile(stats[0], 0.95)),
             f"{name[i]}_emittance_var": float(torch.var(gamma * stats[0])),
         }
         if stats[1] is not None:

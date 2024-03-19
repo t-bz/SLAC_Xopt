@@ -19,14 +19,14 @@ def measure_pvs(names, pv_objects):
 
 def load_data(fname):
     config = yaml.safe_load(open(fname))
-    data = pd.DataFrame(config['data'])
+    data = pd.DataFrame(config["data"])
     data.index = map(int, data.index)
     data = data.sort_index(axis=0)
     return data
 
 
 def save_reference_point(pv_dict: dict[str, PV], filename="reference.yml"):
-    """ save a set of reference values that can be used to return the machine to a
+    """save a set of reference values that can be used to return the machine to a
     previous state"""
 
     values = {name: ele.get() for name, ele in pv_dict.items()}
@@ -36,9 +36,9 @@ def save_reference_point(pv_dict: dict[str, PV], filename="reference.yml"):
 
 
 def set_magnet_strengths(
-        strengths_dict: dict[str, float], pv_dict: dict[str, PV], validate=True
+    strengths_dict: dict[str, float], pv_dict: dict[str, PV], validate=True
 ):
-    """ set magnet strengths using epics pvs, wait for BACT to readback same value"""
+    """set magnet strengths using epics pvs, wait for BACT to readback same value"""
     for bctrl_name, val in strengths_dict.items():
         bact_name = bctrl_name.replace("BCTRL", "BACT")
 
@@ -53,13 +53,13 @@ def set_magnet_strengths(
         # wait until magnet read back matches set point, timeout = 1000 cycles (100 sec)
         if validate:
             i = 0
-            while ~np.isclose(
-                    val, pv_dict[bact_name].get(), rtol=rtol, atol=atol
-            ):
+            while ~np.isclose(val, pv_dict[bact_name].get(), rtol=rtol, atol=atol):
                 time.sleep(0.1)
                 i += 1
 
                 if i > 1000:
-                    warnings.warn(f"timeout exceeded while waiting for {bact_name} to "
-                                  f"reach setpoint, skipping")
+                    warnings.warn(
+                        f"timeout exceeded while waiting for {bact_name} to "
+                        f"reach setpoint, skipping"
+                    )
                     break

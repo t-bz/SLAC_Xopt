@@ -16,6 +16,7 @@ from xopt.vocs import VOCS
 
 class ObjectiveModel(torch.nn.Module):
     """Defines how to compute the objective based on model predictions"""
+
     def __init__(
         self,
         model: TorchModule,
@@ -57,8 +58,12 @@ class ObjectiveModel(torch.nn.Module):
             The objective value.
         """
         # using this calculation due to occasional negative values
-        sigma_xy = torch.sqrt(sigma_x ** 2 + sigma_y ** 2)
-        v = sigma_xy + torch.abs(sigma_x - sigma_y) if self.include_roundness else sigma_xy
+        sigma_xy = torch.sqrt(sigma_x**2 + sigma_y**2)
+        v = (
+            sigma_xy + torch.abs(sigma_x - sigma_y)
+            if self.include_roundness
+            else sigma_xy
+        )
         return self.objective_scale * v + self.objective_offset
 
     def forward(self, x) -> Tensor:
@@ -71,7 +76,9 @@ class ObjectiveModel(torch.nn.Module):
         return self.function(sigma_x, sigma_y)
 
 
-def get_performance_stats(data: Tensor, confidence_level: float = 0.9) -> tuple[Tensor, Tensor, Tensor]:
+def get_performance_stats(
+    data: Tensor, confidence_level: float = 0.9
+) -> tuple[Tensor, Tensor, Tensor]:
     """Computes the median and confidence level across several BO runs.
 
     Args:
@@ -91,11 +98,11 @@ def get_performance_stats(data: Tensor, confidence_level: float = 0.9) -> tuple[
 
 
 def load_model(
-        input_variables: list[str] = None,
-        model_path: Union[str, os.PathLike] = "lcls_cu_injector_nn_model/",
-        calibration_path: Union[str, os.PathLike] = "calibration/",
-        reg: str = None,
-        use_sim_model: bool = False,
+    input_variables: list[str] = None,
+    model_path: Union[str, os.PathLike] = "lcls_cu_injector_nn_model/",
+    calibration_path: Union[str, os.PathLike] = "calibration/",
+    reg: str = None,
+    use_sim_model: bool = False,
 ):
     """Loads the specified version of the LCLS injector surrogate model from file.
 
@@ -122,9 +129,15 @@ def load_model(
     # load calibration transformers
     if reg is not None:
         input_nn_to_cal = torch.load(calibration_path + f"input_nn_to_cal_{reg}_reg.pt")
-        output_nn_to_cal = torch.load(calibration_path + f"output_nn_to_cal_{reg}_reg.pt")
-        lume_model.input_transformers = lume_model.input_transformers + [input_nn_to_cal]
-        lume_model.output_transformers = [output_nn_to_cal] + lume_model.output_transformers
+        output_nn_to_cal = torch.load(
+            calibration_path + f"output_nn_to_cal_{reg}_reg.pt"
+        )
+        lume_model.input_transformers = lume_model.input_transformers + [
+            input_nn_to_cal
+        ]
+        lume_model.output_transformers = [
+            output_nn_to_cal
+        ] + lume_model.output_transformers
     # wrap in TorchModule
     lume_module = TorchModule(
         model=lume_model,
@@ -134,7 +147,9 @@ def load_model(
     return ObjectiveModel(lume_module)
 
 
-def get_model_predictions(input_dict, generator: BayesianGenerator = None) -> dict[str, Any]:
+def get_model_predictions(
+    input_dict, generator: BayesianGenerator = None
+) -> dict[str, Any]:
     """Computes the prior and posterior GP model predictions.
 
     Args:
@@ -148,9 +163,12 @@ def get_model_predictions(input_dict, generator: BayesianGenerator = None) -> di
     if generator is not None:
         for output_name in generator.vocs.output_names:
             if generator.model is not None:
-                gp = generator.model.models[generator.vocs.output_names.index(output_name)]
+                gp = generator.model.models[
+                    generator.vocs.output_names.index(output_name)
+                ]
                 x = torch.tensor(
-                    [input_dict[k] for k in generator.vocs.variable_names], dtype=torch.double
+                    [input_dict[k] for k in generator.vocs.variable_names],
+                    dtype=torch.double,
                 ).unsqueeze(0)
                 with torch.no_grad():
                     _x = gp.input_transform.transform(x)
@@ -183,7 +201,9 @@ def load_xopt_data(file: Union[str, os.PathLike]) -> pd.DataFrame:
     return df
 
 
-def get_running_optimum(data: pd.DataFrame, objective_name: str, maximize: bool) -> np.ndarray:
+def get_running_optimum(
+    data: pd.DataFrame, objective_name: str, maximize: bool
+) -> np.ndarray:
     """Returns the running optimum for the given data and objective.
 
     Parameters
@@ -202,7 +222,9 @@ def get_running_optimum(data: pd.DataFrame, objective_name: str, maximize: bool)
 
     """
     get_opt = np.max if maximize else np.min
-    return np.array([get_opt(data[objective_name].iloc[:i + 1]) for i in range(len(data))])
+    return np.array(
+        [get_opt(data[objective_name].iloc[: i + 1]) for i in range(len(data))]
+    )
 
 
 def calculate_mae(a: Tensor, b: Tensor) -> Tensor:
@@ -242,17 +264,28 @@ def generate_input_mesh(vocs: VOCS, n: int = 10) -> pd.DataFrame:
     Returns:
         Input mesh data.
     """
-    x_lim = torch.tensor([vocs.variables[k] for k in vocs.variable_names], dtype=torch.double)
-    x_i = [torch.linspace(*x_lim[i], n, dtype=torch.double) for i in range(x_lim.shape[0])]
+    x_lim = torch.tensor(
+        [vocs.variables[k] for k in vocs.variable_names], dtype=torch.double
+    )
+    x_i = [
+        torch.linspace(*x_lim[i], n, dtype=torch.double) for i in range(x_lim.shape[0])
+    ]
     x_mesh = torch.meshgrid(*x_i, indexing="ij")
     x = torch.hstack([ele.reshape(-1, 1) for ele in x_mesh])
-    return pd.DataFrame({k: x[:, vocs.variable_names.index(k)] for k in vocs.variable_names})
+    return pd.DataFrame(
+        {k: x[:, vocs.variable_names.index(k)] for k in vocs.variable_names}
+    )
 
 
 def isotime():
     """Returns the time formatted according to ISO."""
     t = datetime.datetime.utcnow()
-    return t.replace(tzinfo=datetime.timezone.utc).astimezone().replace(microsecond=0).isoformat()
+    return (
+        t.replace(tzinfo=datetime.timezone.utc)
+        .astimezone()
+        .replace(microsecond=0)
+        .isoformat()
+    )
 
 
 def numpy_save(run_dir: Union[str, os.PathLike], device_name: str = "OTR3"):
@@ -376,7 +409,7 @@ def numpy_save(run_dir: Union[str, os.PathLike], device_name: str = "OTR3"):
         "WIRE561": [
             "WIRE:IN20:561:XRMS",
             "WIRE:IN20:561:YRMS",
-        ]
+        ],
     }
     name = device_name.upper()
     if name not in device_to_pvs.keys():

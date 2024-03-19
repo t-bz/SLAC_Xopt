@@ -18,6 +18,8 @@ from scripts.image import ImageDiagnostic
 from scripts.automatic_emittance import BaseEmittanceMeasurement, BeamlineConfig
 
 import pandas as pd
+
+
 def explode_all_columns(data: pd.DataFrame):
     """explode all data columns in dataframes that are lists or np.arrays"""
     list_types = []
@@ -32,6 +34,7 @@ def explode_all_columns(data: pd.DataFrame):
             raise ValueError("evaluator outputs that are lists must match in size")
     else:
         return data
+
 
 class ScreenEmittanceMeasurement(BaseEmittanceMeasurement):
     image_diagnostic: ImageDiagnostic
@@ -63,16 +66,13 @@ class ScreenEmittanceMeasurement(BaseEmittanceMeasurement):
         return results
 
     def fast_scan(self, n_points=5):
-        """ 
-        perform a fast, rough scan of the parameter space 
-        
+        """
+        perform a fast, rough scan of the parameter space
+
         """
         old_pv_value = caget(self.beamline_config.scan_quad_pv)
-        
-        scan_points = np.linspace(
-            *self.beamline_config.scan_quad_range,
-            n_points
-        )
+
+        scan_points = np.linspace(*self.beamline_config.scan_quad_range, n_points)
 
         print(f"CAPUT {self.beamline_config.scan_quad_pv} {scan_points[0]}")
         caput(self.beamline_config.scan_quad_pv, scan_points[0])
@@ -90,19 +90,20 @@ class ScreenEmittanceMeasurement(BaseEmittanceMeasurement):
             result["S_y_mm"] = np.array(result["Sy"]) * 1e-3
             result[self.beamline_config.scan_quad_pv] = point
             results += [result]
-            
 
         # reset old pv
         caput(self.beamline_config.scan_quad_pv, old_pv_value)
 
         return explode_all_columns(pd.DataFrame(results))
-            
 
     @property
     def base_vocs(self):
         IMAGE_CONSTRAINTS = {
             "bb_penalty": ["LESS_THAN", 0.0],
-            "log10_total_intensity": ["GREATER_THAN", self.image_diagnostic.min_log_intensity],
+            "log10_total_intensity": [
+                "GREATER_THAN",
+                self.image_diagnostic.min_log_intensity,
+            ],
         }
 
         # create measurement vocs
@@ -132,7 +133,7 @@ class ScreenEmittanceMeasurement(BaseEmittanceMeasurement):
         return vocs
 
     def get_initial_data(self):
-        return self.fast_scan()        
+        return self.fast_scan()
 
     # def get_initial_points(self):
     #     # grab current point
