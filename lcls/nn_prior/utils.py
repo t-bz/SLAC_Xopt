@@ -7,9 +7,9 @@ import pandas as pd
 import torch
 import yaml
 from epics import caget_many
-from torch import Tensor
 
 from lume_model.models import TorchModel, TorchModule
+from torch import Tensor
 from xopt.generators.bayesian.bayesian_generator import BayesianGenerator
 from xopt.vocs import VOCS
 

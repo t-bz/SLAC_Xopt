@@ -1,10 +1,11 @@
+import warnings
+
 import numpy as np
 import pandas as pd
 import torch
 from botorch.models import ModelListGP
 from pandas import DataFrame
 from xopt.generators.bayesian.turbo import OptimizeTurboController
-import warnings
 
 
 class QuadScanTurbo(OptimizeTurboController):

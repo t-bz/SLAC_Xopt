@@ -1,9 +1,8 @@
-import pandas as pd
+import time
 import warnings
 
-import time
-
 import numpy as np
+import pandas as pd
 import yaml
 from epics import PV
 

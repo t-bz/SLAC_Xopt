@@ -1,8 +1,8 @@
+import matplotlib.patches as mpatches
 import torch
+from emitopt.beam_dynamics import build_quad_rmat, propagate_beam_quad_scan
 from matplotlib import pyplot as plt
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
-import matplotlib.patches as mpatches
-from emitopt.beam_dynamics import build_quad_rmat, propagate_beam_quad_scan
 
 
 def plot_virtual_emittance_vs_tuning(

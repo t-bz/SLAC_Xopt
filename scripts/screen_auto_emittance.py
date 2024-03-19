@@ -1,11 +1,12 @@
 import json
 import os
 from abc import ABC, abstractmethod
+from copy import deepcopy
 from time import sleep, time
 from typing import Callable, Dict, List
-from copy import deepcopy
 
 import numpy as np
+
 import pandas as pd
 import yaml
 from emitopt.utils import get_quad_strength_conversion_factor
@@ -13,11 +14,10 @@ from epics import caget, caget_many, caput
 from pydantic import BaseModel, PositiveFloat, PositiveInt
 from xopt import VOCS
 
-from scripts.characterize_emittance import characterize_emittance
-from scripts.image import ImageDiagnostic
 from scripts.automatic_emittance import BaseEmittanceMeasurement, BeamlineConfig
 
-import pandas as pd
+from scripts.characterize_emittance import characterize_emittance
+from scripts.image import ImageDiagnostic
 
 
 def explode_all_columns(data: pd.DataFrame):

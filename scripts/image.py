@@ -1,11 +1,10 @@
-from pprint import pprint
-
 import json
 import os.path
 import time
 from copy import copy
+from pprint import pprint
 from time import sleep
-from typing import Union, List
+from typing import List, Union
 
 import h5py
 import numpy as np

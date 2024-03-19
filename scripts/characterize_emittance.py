@@ -1,7 +1,8 @@
+import time
 import traceback
 from copy import deepcopy
 from typing import Callable, Dict
-import time
+
 import numpy as np
 
 import pandas as pd
@@ -10,6 +11,7 @@ from botorch import fit_gpytorch_mll
 
 from botorch.models.gp_regression import SingleTaskGP
 from botorch.models.transforms import Normalize, Standardize
+from emitopt.analysis import compute_emit_bayesian
 from gpytorch import ExactMarginalLogLikelihood
 from gpytorch.kernels import MaternKernel, PolynomialKernel, ScaleKernel
 from gpytorch.likelihoods import GaussianLikelihood
@@ -19,7 +21,6 @@ from xopt import Evaluator, VOCS, Xopt
 from xopt.generators.bayesian import UpperConfidenceBoundGenerator
 from xopt.generators.bayesian.models.standard import StandardModelConstructor
 from xopt.numerical_optimizer import GridOptimizer
-from emitopt.analysis import compute_emit_bayesian
 
 from scripts.custom_turbo import QuadScanTurbo
 from scripts.utils.visualization import visualize_step

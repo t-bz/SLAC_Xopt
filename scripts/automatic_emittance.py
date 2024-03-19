@@ -1,11 +1,11 @@
 import json
 import os
-from abc import ABC, abstractmethod
-from time import sleep
 import time
-from typing import Callable, Dict, List
-from copy import deepcopy
 import traceback
+from abc import ABC, abstractmethod
+from copy import deepcopy
+from time import sleep
+from typing import Callable, Dict, List
 
 import numpy as np
 import pandas as pd
