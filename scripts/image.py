@@ -234,7 +234,7 @@ class ImageDiagnostic(BaseModel):
 
         images = []
         for i in range(n_measurements):
-            images += [self.get_raw_image()]
+            images += [self.get_raw_data()[0]]
             sleep(self.wait_time)
 
         # restore shutter state

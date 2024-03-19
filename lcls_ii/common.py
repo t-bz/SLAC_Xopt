@@ -43,6 +43,7 @@ def set_magnet_strengths(
         bact_name = bctrl_name.replace("BCTRL", "BACT")
 
         # set using BCTRL
+        print(bctrl_name, val)
         pv_dict[bctrl_name].put(val)
 
         # relative and absolute tolerances for setting pvs
