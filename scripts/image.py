@@ -1,3 +1,5 @@
+from pprint import pprint
+
 import json
 import os.path
 import time
@@ -17,25 +19,28 @@ from .utils.fitting_methods import fit_gaussian_linear_background
 
 
 class ROI(BaseModel):
-    xmin: int
-    xmax: int
-    ymin: int
-    ymax: int
+    xcenter: int
+    ycenter: int
+    xwidth: int
+    ywidth: int
 
     @property
     def bounding_box(self):
-        return [self.xmin, self.xmax, self.xmax - self.xmin, self.ymax - self.ymin]
+        return [self.xcenter - int(self.xwidth/2),
+                self.ycenter - int(self.ywidth/2),
+                self.xwidth, self.ywidth]
 
     def crop_image(self, img):
         x_size, y_size = img.shape
 
-        if self.xmax > x_size or self.ymax > y_size:
+        if self.xwidth > x_size or self.ywidth > y_size:
             raise ValueError(
                 f"must specify ROI that is smaller than the image, "
                 f"image size is {img.shape}"
             )
 
-        img = img[self.xmin : self.xmax, self.ymin : self.ymax]
+        bbox = self.bounding_box
+        img = img[bbox[0]: bbox[0] + bbox[2], bbox[1]: bbox[1] + bbox[3]]
 
         return img
 
@@ -61,6 +66,7 @@ class ImageDiagnostic(BaseModel):
     visualize: bool = True
     return_statistics: bool = False
     threshold: float = 0.0
+    apply_bounding_box_constraint: True
 
     testing: bool = False
 
@@ -86,9 +92,9 @@ class ImageDiagnostic(BaseModel):
         for _ in range(n_shots):
 
             # get image and PV's at the same time
-            img, extra_data = self.get_processed_image()
+            img, extra_data, raw_img = self.get_processed_image()
             if fit_image:
-                result = self.calculate_beamsize(img)
+                result = self.calculate_beamsize(img, raw_img)
 
                 # convert beam size results to microns
                 if result["Sx"] is not None:
@@ -211,14 +217,16 @@ class ImageDiagnostic(BaseModel):
         img, extra_data = self.get_raw_data()
 
         # subtract background
-        img = img - self.background_image
-        img = np.where(img >= 0, img, 0)
+        final_img = img - self.background_image
+        final_img = np.where(final_img >= 0, final_img, 0)
 
         # crop image if specified
         if self.roi is not None:
-            img = self.roi.crop_image(img)
+            final_img = self.roi.crop_image(final_img)
+        else:
+            final_img = img
 
-        return img, extra_data
+        return final_img, extra_data, img
 
     def measure_background(self, n_measurements: int = 5, file_location: str = None):
         file_location = file_location or ""
@@ -250,13 +258,19 @@ class ImageDiagnostic(BaseModel):
 
         return mean
 
-    def calculate_beamsize(self, img):
-        roi_c = np.array(img.shape) / 2
-        roi_radius = np.min((roi_c * 2, np.array(img.shape))) / 2
-
+    def calculate_beamsize(self, img, raw_img):
         # apply threshold
         img = img - self.threshold
         img = np.where(img >= 0, img, 0)
+
+        # visualize image
+        if self.visualize:
+            print("displaying image")
+            fig, ax = plt.subplots(2, 1)
+            c = ax[0].imshow(raw_img, origin="lower")
+            ax[1].imshow(img, origin="lower")
+
+            fig.colorbar(c)
 
         # if image is below min intensity threshold avoid fitting
         log10_total_intensity = np.log10(img.sum())
@@ -269,7 +283,7 @@ class ImageDiagnostic(BaseModel):
                 "Sx": np.NaN,
                 "Sy": np.NaN,
                 "bb_penalty": np.NaN,
-                "total_intensity": 10**log10_total_intensity,
+                "total_intensity": 10 ** log10_total_intensity,
                 "log10_total_intensity": log10_total_intensity,
             }
             return result
@@ -292,27 +306,46 @@ class ImageDiagnostic(BaseModel):
                         centroid + n_stds * sizes * np.array((-1, 1)),
                     )
                 )
+                roi_c = np.array([self.roi.xcenter, self.roi.ycenter])
+                roi_radius = self.roi.xwidth / 2
 
                 # visualization
                 if self.visualize:
-                    fig, ax = plt.subplots()
-                    c = ax.imshow(img, origin="lower")
-                    ax.plot(*centroid, "+r")
-                    ax.plot(*roi_c[::-1], ".r")
-                    fig.colorbar(c)
+                    ax[1].plot(*centroid, "+r")
+                    ax[0].plot(*roi_c, ".r")
 
                     rect = patches.Rectangle(
-                        pts[0], *sizes * n_stds * 2.0, facecolor="none", edgecolor="r"
+                        pts[0],
+                        *sizes * n_stds * 2.0,
+                        facecolor="none", edgecolor="r"
                     )
-                    ax.add_patch(rect)
+                    ax[1].add_patch(rect)
 
+                    # plot bounding circle
                     circle = patches.Circle(
-                        roi_c[::-1], roi_radius, facecolor="none", edgecolor="r"
+                        roi_c, self.roi.xwidth / 2,
+                        facecolor="none", edgecolor="r"
                     )
-                    ax.add_patch(circle)
+                    ax[0].add_patch(circle)
 
-                distances = np.linalg.norm(pts - roi_c, axis=1)
+                    circle2 = patches.Circle(
+                        (
+                            self.roi.xwidth / 2,
+                            self.roi.xwidth / 2
+                        ),
+                        self.roi.xwidth / 2,
+                        facecolor="none", edgecolor="r"
+                    )
+                    ax[1].add_patch(circle2)
 
+                temp = pts - np.array((
+                    self.roi.xwidth / 2,
+                    self.roi.xwidth / 2
+                ))
+                distances = np.linalg.norm(
+                    temp,
+                    axis=1
+                )
                 # subtract radius to get penalty value
                 bb_penalty = np.max(distances) - roi_radius
 
@@ -328,8 +361,9 @@ class ImageDiagnostic(BaseModel):
                     "log10_total_intensity": log10_total_intensity,
                 }
 
-                # set results to none if the beam extends beyond the roi
-                if bb_penalty > 0:
+                # set results to none if the beam extends beyond the roi and the
+                # bounding box constraint is active
+                if bb_penalty > 0 and self.apply_bounding_box_constraint:
                     for name in ["Cx", "Cy", "Sx", "Sy"]:
                         result[name] = np.NaN
 
@@ -343,6 +377,9 @@ class ImageDiagnostic(BaseModel):
                     "total_intensity": fits["total_intensity"],
                     "log10_total_intensity": log10_total_intensity,
                 }
+
+            if self.visualize:
+                pprint(result)
 
             return result
 
