@@ -12,7 +12,7 @@ import pandas as pd
 import yaml
 from epics import PV
 from matplotlib import patches, pyplot as plt
-from pydantic import BaseModel, PositiveFloat, PositiveInt
+from pydantic import BaseModel, PositiveFloat, PositiveInt, ConfigDict
 
 from .utils.fitting_methods import fit_gaussian_linear_background
 
@@ -47,7 +47,7 @@ class ROI(BaseModel):
         return img
 
 
-class ImageDiagnostic(BaseModel):
+class ImageDiagnostic(BaseModel):    
     screen_name: str
     array_data_suffix: str = "Image:ArrayData"
     array_n_cols_suffix: str = "Image:ArraySize0_RBV"
@@ -68,7 +68,7 @@ class ImageDiagnostic(BaseModel):
     visualize: bool = True
     return_statistics: bool = False
     threshold: float = 0.0
-    apply_bounding_box_constraint: True
+    apply_bounding_box_constraint:bool = True
 
     testing: bool = False
 
@@ -77,7 +77,8 @@ class ImageDiagnostic(BaseModel):
 
         # create PV objects
         self._pvs = [PV(name) for name in self.pv_names + self.extra_pvs]
-        self._shutter_pv_obj = PV(self.beam_shutter_pv)
+        if self.beam_shutter_pv is not None:
+            self._shutter_pv_obj = PV(self.beam_shutter_pv)
 
     def measure_beamsize(self, n_shots: int = 1, fit_image=True, **kwargs):
         """
@@ -197,7 +198,7 @@ class ImageDiagnostic(BaseModel):
     def get_raw_data(self) -> (np.ndarray, dict):
         if self.testing:
             img = np.zeros((2000, 2000))
-            img[800:-800, 900:-900] = 1
+            img[800:-800, 900:-300] = 1
             self.resolution = 1.0
             extra_data = {
                 "ICT1": np.random.randn() + 1.0,
@@ -305,34 +306,41 @@ class ImageDiagnostic(BaseModel):
                         centroid + n_stds * sizes * np.array((-1, 1)),
                     )
                 )
-                roi_c = np.array([self.roi.xcenter, self.roi.ycenter])
-                roi_radius = self.roi.xwidth / 2
+                if self.roi is not None:
+                    roi_c = np.array([self.roi.xcenter, self.roi.ycenter])
+                    roi_radius = self.roi.xwidth / 2
+                else:
+                    roi_c = np.array(img.shape) / 2
+                    roi_radius = np.min(np.array(img.shape) / 2)
 
                 # visualization
                 if self.visualize:
+                    ax[0].plot(*roi_c[::-1], ".r")
                     ax[1].plot(*centroid, "+r")
-                    ax[0].plot(*roi_c, ".r")
 
                     rect = patches.Rectangle(
-                        pts[0], *sizes * n_stds * 2.0, facecolor="none", edgecolor="r"
+                        pts[0], 
+                        *sizes * n_stds * 2.0, 
+                        facecolor="none", 
+                        edgecolor="r"
                     )
                     ax[1].add_patch(rect)
 
-                    # plot bounding circle
+                    # plot bounding circle on raw
                     circle = patches.Circle(
-                        roi_c, self.roi.xwidth / 2, facecolor="none", edgecolor="r"
+                        roi_c[::-1], roi_radius, facecolor="none", edgecolor="r"
                     )
                     ax[0].add_patch(circle)
 
                     circle2 = patches.Circle(
-                        (self.roi.xwidth / 2, self.roi.xwidth / 2),
-                        self.roi.xwidth / 2,
+                        (roi_radius, roi_radius),
+                        roi_radius,
                         facecolor="none",
                         edgecolor="r",
                     )
                     ax[1].add_patch(circle2)
 
-                temp = pts - np.array((self.roi.xwidth / 2, self.roi.xwidth / 2))
+                temp = pts - np.array((roi_radius, roi_radius))
                 distances = np.linalg.norm(temp, axis=1)
                 # subtract radius to get penalty value
                 bb_penalty = np.max(distances) - roi_radius

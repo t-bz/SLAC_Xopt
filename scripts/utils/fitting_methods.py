@@ -33,8 +33,8 @@ class GaussianLeastSquares:
         pred = amp * torch.exp(-((train_x - mu) ** 2) / 2 / sigma**2) + offset
         neg_mse = -torch.sum((pred - train_y) ** 2, dim=-1).sqrt() / len(train_y)
         neg_log_prior_loss = (
-            -0.01 * (amp.squeeze() - 1.0) ** 2
-            - 0.01**2 * (mu.squeeze() - self.pk_loc) ** 2
+            - 0.1 * (amp.squeeze() - 1.0) ** 2
+            - 0.00001 * (mu.squeeze() - self.pk_loc) ** 2
         )
         # print(
         #    float(torch.mean(neg_mse)),
@@ -55,9 +55,15 @@ def fit_gaussian_linear_background(y, inital_guess=None, visualize=True, n_resta
     # threshold off mean value on the edge of the domain
     thresholded_y = y - np.mean(y[-10:])
     thresholded_y = np.where(thresholded_y > 0, thresholded_y, 0)
+    
+    #thresholded_y = np.clip(
+    #    gaussian_filter(thresholded_y, 5), 0, np.inf
+    #)
 
     # normalize amplitude
-    normed_y = thresholded_y / max(thresholded_y)
+    norm_factor = max(gaussian_filter(thresholded_y, 5))
+    
+    normed_y = thresholded_y / norm_factor
 
     x = np.arange(normed_y.shape[0])
     width = normed_y.shape[0]
@@ -65,7 +71,7 @@ def fit_gaussian_linear_background(y, inital_guess=None, visualize=True, n_resta
     sigma_min = 2.0
 
     # specify initial guesses if not provided in initial_guess
-    smoothed_y = np.clip(gaussian_filter(normed_y, 3), 0, np.inf)
+    smoothed_y = np.clip(gaussian_filter(normed_y, 5), 0, np.inf)
 
     pk_value = np.max(smoothed_y)
     pk_loc = np.argmax(smoothed_y)
@@ -76,12 +82,15 @@ def fit_gaussian_linear_background(y, inital_guess=None, visualize=True, n_resta
 
     # use weighted mean and rms to guess
     center = inital_guess.pop("mu", pk_loc)
-    sigma = inital_guess.pop("sigma", normed_y.shape[0] / 2)
+    sigma = inital_guess.pop(
+        "sigma", normed_y.shape[0] / 10
+    )
 
     para0 = torch.tensor([amplitude, center, sigma, offset])
+    print(para0)
 
-    # generate points +/- 50 percent
-    rand_para0 = torch.rand((n_restarts, 4)) - 0.5
+    # generate points +/- 20 percent
+    rand_para0 = torch.rand((n_restarts, 4)) - 0.2
     rand_para0[..., 0] = (rand_para0[..., 0] + 1.0) * amplitude
     rand_para0[..., 1] = (rand_para0[..., 1] + 1.0) * center
     rand_para0[..., 2] = (rand_para0[..., 2] + 1.0) * sigma
@@ -108,7 +117,7 @@ def fit_gaussian_linear_background(y, inital_guess=None, visualize=True, n_resta
     )
 
     # fit smoothed model to get better initial points
-    scandidates, svalues = gen_candidates_scipy(
+    candidates, values = gen_candidates_scipy(
         para0,
         smoothed_model.forward,
         lower_bounds=bounds[0],
@@ -117,13 +126,13 @@ def fit_gaussian_linear_background(y, inital_guess=None, visualize=True, n_resta
     )
 
     # fit regular model to refine
-    candidates, values = gen_candidates_scipy(
-        scandidates,
-        smoothed_model.forward,
-        lower_bounds=bounds[0],
-        upper_bounds=bounds[1],
-        options={"maxiter": 50},
-    )
+    #candidates, values = gen_candidates_scipy(
+    #    scandidates,
+    #    model.forward,
+    #    lower_bounds=bounds[0],
+    #    upper_bounds=bounds[1],
+    #    options={"maxiter": 50},
+    #)
 
     # in some cases the fit will return a sigma value of 2.0
     # or an amplitude that is within the noise
@@ -131,9 +140,9 @@ def fit_gaussian_linear_background(y, inital_guess=None, visualize=True, n_resta
     # print(candidates)
     indiv_condition = torch.stack(
         (
-            candidates[:, -2] > sigma_min * 1.1,
+            candidates[:, -2] > sigma_min * 2.0,
             candidates[:, -2] < width / 1.5,
-            candidates[:, 0] > 0.1,
+            candidates[:, 0] > 0.3,
         )
     )
     # print(indiv_condition)
@@ -148,8 +157,8 @@ def fit_gaussian_linear_background(y, inital_guess=None, visualize=True, n_resta
         candidate = valid_candidates[torch.argmax(valid_values)].detach().numpy()
 
         if visualize:
-            plot_fit(x, normed_y, candidate)
-
+            fig,ax = plot_fit(x, normed_y, candidate)
+            
     else:
         # if no fits were successful return nans
         bad_candidate = candidates[torch.argmax(values)].detach().numpy()
@@ -159,6 +168,7 @@ def fit_gaussian_linear_background(y, inital_guess=None, visualize=True, n_resta
 
         candidate = [np.NaN] * 4
 
+    ax.plot(x,smoothed_y)
     return candidate
 
 
