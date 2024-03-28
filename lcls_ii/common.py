@@ -38,27 +38,33 @@ def set_magnet_strengths(
     strengths_dict: dict[str, float], pv_dict: dict[str, PV], validate=True
 ):
     """set magnet strengths using epics pvs, wait for BACT to readback same value"""
-    for bctrl_name, val in strengths_dict.items():
-        bact_name = bctrl_name.replace("BCTRL", "BACT")
 
+    # set all of the pvs
+    for bctrl_name, val in strengths_dict.items():
         # set using BCTRL
         print(bctrl_name, val)
         pv_dict[bctrl_name].put(val)
+
+    # wait for each pv to settle
+    for bctrl_name, val in strengths_dict.items():
+        bact_name = bctrl_name.replace("BCTRL", "BACT")
+        readback_pv = PV(bact_name)
 
         # relative and absolute tolerances for setting pvs
         rtol = 1e-3
         atol = 1e-6
 
-        # wait until magnet read back matches set point, timeout = 1000 cycles (100 sec)
+        # wait until magnet read back matches set point, timeout = 100 cycles (10 sec)
         if validate:
             i = 0
-            while ~np.isclose(val, pv_dict[bact_name].get(), rtol=rtol, atol=atol):
+
+            while ~np.isclose(val, readback_pv.get(), rtol=rtol, atol=atol):
                 time.sleep(0.1)
                 i += 1
 
-                if i > 1000:
+                if i > 100:
                     warnings.warn(
                         f"timeout exceeded while waiting for {bact_name} to "
-                        f"reach setpoint, skipping"
+                        f"reach setpoint"
                     )
                     break

@@ -1,0 +1,10 @@
+# PyCharm
+.idea
+# Compiled Python files
+*.pyc
+# macOS file system
+.DS_Store
+# Jupyter Notebook
+.ipynb_checkpoints
+# Image folder
+image

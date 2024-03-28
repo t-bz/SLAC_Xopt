@@ -87,7 +87,6 @@ def fit_gaussian_linear_background(y, inital_guess=None, visualize=True, n_resta
     )
 
     para0 = torch.tensor([amplitude, center, sigma, offset])
-    print(para0)
 
     # generate points +/- 20 percent
     rand_para0 = torch.rand((n_restarts, 4)) - 0.2
@@ -168,7 +167,8 @@ def fit_gaussian_linear_background(y, inital_guess=None, visualize=True, n_resta
 
         candidate = [np.NaN] * 4
 
-    ax.plot(x,smoothed_y)
+    if visualize:
+        ax.plot(x,smoothed_y)
     return candidate
 
 
