@@ -1,0 +1,83 @@
+data:
+  S_x_mm:
+    '0': null
+  S_y_mm:
+    '0': null
+  Sx:
+    '0': null
+  Sy:
+    '0': null
+  c:
+    '0': 5.3154341743
+  total_size:
+    '0': null
+  x:
+    '0': 7.8269877154
+  xopt_error:
+    '0': false
+  xopt_runtime:
+    '0': 0.0001024939
+dump_file: /home/physics/rroussel/SLAC_Xopt/tests/emittance_characterize_1706906018.yml
+evaluator:
+  function: __main__.TAutomaticEmittanceMeasurement.eval_beamsize
+  function_kwargs: {}
+  max_workers: 1
+  vectorized: false
+generator:
+  beta: 100.0
+  computation_time: null
+  fixed_features: null
+  gp_constructor:
+    covar_modules: {}
+    mean_modules: {}
+    name: standard
+    trainable_mean_keys: []
+    transform_inputs: true
+    use_low_noise_prior: false
+  log_transform_acquisition_function: false
+  max_travel_distances: null
+  model: null
+  n_candidates: 1
+  n_interpolate_points: 5
+  n_monte_carlo_samples: 128
+  name: upper_confidence_bound
+  numerical_optimizer:
+    n_grid_points: 100
+    name: grid
+  supports_batch_generation: true
+  turbo_controller:
+    batch_size: 1
+    best_value: null
+    center_x: null
+    dim: 1
+    failure_counter: 0
+    failure_tolerance: 2
+    length: 1.0
+    length_max: 2.0
+    length_min: 0.0078125
+    name: optimize
+    scale_factor: 2.0
+    success_counter: 0
+    success_tolerance: 2
+    tkwargs:
+      dtype: torch.float64
+  use_cuda: false
+max_evaluations: null
+serialize_inline: false
+serialize_torch: false
+strict: true
+vocs:
+  constants: {}
+  constraints:
+    c:
+    - LESS_THAN
+    - 0.0
+  objectives:
+    S_x_mm: MINIMIZE
+  observables:
+  - S_x_mm
+  - S_y_mm
+  variables:
+    x:
+    - -10.0
+    - 10.0
