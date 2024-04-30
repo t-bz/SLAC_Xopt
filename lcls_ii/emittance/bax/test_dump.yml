@@ -1,0 +1,71 @@
+X_bax: null
+X_bayes_exp: null
+beam_energy_gev: 0.088
+data_dir: .
+image_diagnostic:
+  apply_bounding_box_constraint: true
+  array_data_suffix: Image:ArrayData
+  array_n_cols_suffix: Image:ArraySize0_RBV
+  array_n_rows_suffix: Image:ArraySize1_RBV
+  background_file: null
+  beam_shutter_pv: TPR:LGUN:TS01:0:TRG00_SYS2_TCTL
+  bounding_box_half_width: 3.0
+  extra_pvs: []
+  min_log_intensity: 5.0
+  n_fitting_restarts: 2
+  resolution: 19.24
+  resolution_suffix: RESOLUTION
+  return_statistics: false
+  roi:
+    xcenter: 878
+    xwidth: 600
+    ycenter: 967
+    ywidth: 600
+  save_image_location: .
+  screen_name: OTRS:HTR:330
+  testing: false
+  threshold: 0.0
+  visualize: false
+  wait_time: 1.0
+jitter: 0.1
+local_region_fraction: 0.25
+measurement_variable:
+  QUAD:HTR:320:BCTRL:
+  - -4.46919
+  - 4.4792
+n_bax_samples: 20
+n_exploration_steps: 5
+n_fitting_points: 11
+n_grid_points: 5
+n_interpolate_points: 3
+n_optimization_steps: 10
+n_random_samples: 10
+pv_list: ..\..\tracked_pvs.yml
+pv_to_geometric_focusing_strength_scale: 2.74
+quad_length: 0.124
+rmat_x:
+- - 1.0
+  - 0.2481
+- - 0.0
+  - 1.0
+rmat_y:
+- - 1.0
+  - 0.2481
+- - 0.0
+  - 1.0
+tuning_variables:
+  QUAD:HTR:120:BCTRL:
+  - -4.0
+  - 1.0
+  QUAD:HTR:140:BCTRL:
+  - -4.4778
+  - 4.4762
+  QUAD:HTR:300:BCTRL:
+  - -4.46035
+  - 4.4692
+x_design_twiss:
+- 5.011
+- 0.0487
+y_design_twiss:
+- 5.011
+- 0.0487
