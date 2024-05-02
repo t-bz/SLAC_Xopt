@@ -4,7 +4,7 @@ import time
 from copy import copy
 from pprint import pprint
 from time import sleep
-from typing import List, Union
+from typing import List, Union, Optional
 
 import h5py
 import numpy as np
@@ -57,9 +57,9 @@ class ImageDiagnostic(BaseModel):
     beam_shutter_pv: str = None
     extra_pvs: List[str] = []
 
-    background_file: str = None
-    save_image_location: Union[str, None] = None
-    roi: ROI = None
+    background_file: Optional[str] = None
+    save_image_location: Optional[str] = None
+    roi: Optional[ROI] = None
 
     min_log_intensity: float = 4.0
     bounding_box_half_width: PositiveFloat = 3.0
