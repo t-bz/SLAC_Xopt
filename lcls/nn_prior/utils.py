@@ -144,7 +144,7 @@ def load_model(
         input_order=input_variables,
         output_order=lume_model.output_names[0:2],
     )
-    return ObjectiveModel(lume_module)
+    return ObjectiveModel(lume_module, use_sim_model=use_sim_model)
 
 
 def get_model_predictions(
